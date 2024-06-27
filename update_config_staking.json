@@ -1,0 +1,8 @@
+{
+    "update_config":{
+        "owner":"nibi1hzty850q3vnew33yuft82j0v5fazyvfcescxhs",
+        "rewards_dispatcher_contract":"nibi1yftutqvzrymh8jncpuv6tf9af3g2c2wwpjdetpxdxzk6xedaun4qpl68n8",
+        "validators_registry_contract":"nibi17jzr07w9wvdgjer6ulzax09gd2tge5ql473tffhgzv9eh2pf8zrq5yhx4g",
+        "stnibi_token_contract":"nibi1ykesgv3fqahxnmscpvjz23xlsz94d3lrnejkf89layh9a280mnxq0mq23v"
+    }
+}

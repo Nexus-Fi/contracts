@@ -16,6 +16,7 @@ use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{from_slice, to_vec, Addr, Decimal, Order, StdError, StdResult, Storage, Timestamp, Uint128};
 use cosmwasm_storage::{Bucket, PrefixedStorage, ReadonlyBucket, ReadonlyPrefixedStorage};
 use nexus_validator_registary::registry::ValidatorResponse;
+use cosmwasm_std::Uint256;
 
 use cw_storage_plus::{Item, Map, SnapshotMap, Strategy};
 
@@ -34,9 +35,10 @@ pub static LOCK_INFO: &[u8] = b"locking_users";
 // Contains whitelisted address which are allowed to pause (but not unpause) the contracts
 pub const GUARDIANS: Map<String, bool> = Map::new("guardians");
 pub const LPTOKENS: Map<String, Uint128>=Map::new("lptokens");
-
+pub const RESTAKETOKENS: Map<String, Uint128>=Map::new("restaketokens");
 pub static PREFIX_WAIT_MAP: &[u8] = b"wait";
 pub static UNBOND_HISTORY_MAP: &[u8] = b"history_map";
+pub const TOKEN_SUPPLY: Map<&str, Uint256> = Map::new("token_supply");
 
 pub static PREFIX_REWARD: &[u8] = b"reward_v3";
 
@@ -60,6 +62,7 @@ pub static PREFIX_POOL_INFO: &[u8] = b"pool_info_v3";
 pub struct StakerInfo {
     pub amount_staked_unibi: Uint128,
     pub amount_staked_stnibi: Uint128,
+    pub amount_restaked_rstnibi:Uint128,
     pub bonding_time:Uint128,
     pub epoch_period:Uint128,
     pub validator_list:Vec<ValidatorResponse>

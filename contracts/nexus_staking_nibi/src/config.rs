@@ -61,6 +61,7 @@ pub fn execute_update_config(
     rewards_dispatcher_contract: Option<String>,
     stnibi_token_contract: Option<String>,
     validators_registry_contract: Option<String>,
+    rstnibi_token_contract:Option<String>
 ) -> StdResult<Response> {
     // only owner must be able to send this message.
     let conf = CONFIG.load(deps.storage)?;
@@ -97,13 +98,28 @@ pub fn execute_update_config(
         let token_raw = deps.api.addr_validate(&token)?;
 
         CONFIG.update(deps.storage, |mut last_config| -> StdResult<_> {
-            if last_config.stnibi_token_contract.is_some() {
-                return Err(StdError::generic_err(
-                    "updating stnibi token address is forbidden",
-                ));
-            }
+            // if last_config.rstnibi_token_contract.is_some() {
+            //     return Err(StdError::generic_err(
+            //         "updating stnibi token address is forbidden",
+            //     ));
+            // }
 
             last_config.stnibi_token_contract = Some(token_raw);
+            Ok(last_config)
+        })?;
+    }
+    
+    if let Some(token) = rstnibi_token_contract {
+        let token_raw = deps.api.addr_validate(&token)?;
+
+        CONFIG.update(deps.storage, |mut last_config| -> StdResult<_> {
+            // if last_config.stnibi_token_contract.is_some() {
+            //     return Err(StdError::generic_err(
+            //         "updating stnibi token address is forbidden",
+            //     ));
+            // }
+
+            last_config.rstnibi_token_contract = Some(token_raw);
             Ok(last_config)
         })?;
     }

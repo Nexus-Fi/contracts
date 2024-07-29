@@ -21,9 +21,12 @@ use cosmwasm_std::{
     attr, coin, coins, to_binary, BankMsg, CosmosMsg, Decimal, DepsMut, Env, MessageInfo, Response,
     StakingMsg, StdError, StdResult, Storage, Uint128, WasmMsg,Decimal256, Uint256
 };
+
 use cw20::Cw20ExecuteMsg;
 use nexus_validator_registary::common::calculate_undelegations;
 use nexus_validator_registary::registry::ValidatorResponse;
+use nibiru_std::proto::cosmos::base;
+use nibiru_std::proto::NibiruStargateMsg;
 use signed_integers::SignedInt;
 
 pub fn execute_withdraw_unbonded(
@@ -77,6 +80,23 @@ pub fn execute_withdraw_unbonded(
         amount: coins(withdraw_amount.u128(), &*coin_denom),
     }
     .into()];
+
+    let staker_info = STAKERINFO.may_load(deps.storage, sender_human.clone().into_string())?;
+    let new_staker_info = match staker_info {
+        Some(mut d) =>{
+                // d.amount_restaked_rstnibi = Uint128::zero();
+                // d.amount_staked_stnibi = Uint128::zero();
+                d.amount_staked_unibi += withdraw_amount;
+                d            
+        },
+        None =>{
+            return Err(StdError::generic_err(
+                "NIBI not staked",
+            ));
+        }
+
+    };
+    let _  = STAKERINFO.save(deps.storage, sender_human.to_string(),&new_staker_info );
 
     let res = Response::new().add_messages(msgs).add_attributes(vec![
         attr("action", "finish_burn"),
@@ -296,7 +316,7 @@ pub(crate) fn execute_unbond_stnibi(
 
     store_unbond_wait_list(deps.storage, current_batch.id, sender.clone(), amount)?;
 
-    let current_time = env.block.time.seconds();
+    let current_time = env.clone().block.time.seconds();
     let passed_time = current_time - state.last_unbonded_time;
 
     let mut messages: Vec<CosmosMsg> = vec![];
@@ -304,7 +324,7 @@ pub(crate) fn execute_unbond_stnibi(
     // If the epoch period is passed, the undelegate message would be sent.
     if passed_time > epoch_period {
         let mut undelegate_msgs =
-            process_undelegations(&mut deps, env, &mut current_batch, &mut state)?;
+            process_undelegations(&mut deps, env.clone(), &mut current_batch, &mut state)?;
         messages.append(&mut undelegate_msgs);
     }
     
@@ -319,13 +339,44 @@ pub(crate) fn execute_unbond_stnibi(
     let token_address = config
         .stnibi_token_contract
         .ok_or_else(|| StdError::generic_err("the token contract must have been registered"))?;
+    let coin_denom  ="".to_string() ;
+    let contract_address = env.clone().contract.address.into_string();
+        let cosmos_msg: CosmosMsg = nibiru_std::proto::nibiru::tokenfactory::MsgBurn {
+            sender: contract_address.clone(),
+            // TODO cosmwasm-std Coin should implement into()
+            // base::v1beta1::Coin.
 
-    let burn_msg = Cw20ExecuteMsg::Burn { amount };
-    messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: token_address.to_string(),
-        msg: to_binary(&burn_msg)?,
-        funds: vec![],
-    }));
+            coin: Some(base::v1beta1::Coin {
+                denom: coin_denom.clone(),
+                amount: amount.to_string(),
+            }),
+            burn_from:contract_address,
+        }
+        .into_stargate_msg();
+        
+    // let burn_msg = Cw20ExecuteMsg::Burn { amount };
+    // messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
+    //     contract_addr: token_address.to_string(),
+    //     msg: to_binary(&cosmos_msg)?,
+    //     funds: vec![],
+    // }));
+    messages.push(cosmos_msg);
+    let staker_info = STAKERINFO.may_load(deps.storage,sender.clone()).unwrap();
+
+    let new_staker_info = match staker_info {
+        Some(mut d) =>{
+                d.amount_staked_stnibi -= amount;
+                d            
+        },
+        None =>{
+            return Err(StdError::generic_err(
+                "NIBI not staked",
+            ));
+        }
+
+     };
+
+    let _  = STAKERINFO.save(deps.storage, sender.clone(),&new_staker_info );
 
     let res = Response::new().add_messages(messages).add_attributes(vec![
         attr("action", "burn"),

@@ -1,8 +1,9 @@
 {
     "update_config":{
         "owner":"nibi1hzty850q3vnew33yuft82j0v5fazyvfcescxhs",
-        "rewards_dispatcher_contract":"nibi1yftutqvzrymh8jncpuv6tf9af3g2c2wwpjdetpxdxzk6xedaun4qpl68n8",
-        "validators_registry_contract":"nibi17jzr07w9wvdgjer6ulzax09gd2tge5ql473tffhgzv9eh2pf8zrq5yhx4g",
-        "stnibi_token_contract":"nibi1ykesgv3fqahxnmscpvjz23xlsz94d3lrnejkf89layh9a280mnxq0mq23v"
+        "rewards_dispatcher_contract":"nibi12y04ajv9fmh2n64mhtrltf8yzpqkl2a4djg8du24np5xklw5kvcq6dtsmj",
+        "validators_registry_contract":"nibi17gxmfpc6l6s79dvghs5pxgruh3spxetx0td70qwq5jkd8sa5zx7sxvjwls",
+        "stnibi_token_contract":"nibi1jwc8jufz03vmtsrcwywptzksc4t9yjgnstax3r09rm9pcrl4jy9s4vpzel",
+        "rstnibi_token_contract":"nibi1h3rnkjxargplk88nqg9y0xrwscj5phk8jkdhc7vcre72qp8gvfdsg8xa66"
     }
 }

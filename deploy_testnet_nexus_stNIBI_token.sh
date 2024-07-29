@@ -98,12 +98,12 @@ echo $CONTRACT_ADDRESS
 #       --yes | jq -rcs '.[0].txhash'
       
 
-#       nibid tx wasm execute $CONTRACT_ADDRESS "$(cat execute_bond_staking.json)" \
-#       --from $FROM \
-#       --gas auto \
-#       --gas-adjustment 1.5 \
-#       --gas-prices 0.025unibi \
-#       --yes | jq -rcs '.[0].txhash'
+    #   nibid tx wasm execute $CONTRACT_ADDRESS "$(cat increase_allowence.json)" \
+    #   --from $FROM \
+    #   --gas auto \
+    #   --gas-adjustment 1.5 \
+    #   --gas-prices 0.025unibi \
+    #   --yes | jq -rcs '.[0].txhash'
 
 # nibid tx wasm execute $CONTRACT_ADDRESS "$(cat restake.json)" \
 #       --amount 1000000nsunibi \

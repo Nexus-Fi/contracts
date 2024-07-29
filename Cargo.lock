@@ -635,6 +635,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexus_restake_rstnibi"
+version = "0.1.0"
+dependencies = [
+ "basset",
+ "cosmwasm-schema 2.0.4",
+ "cosmwasm-std",
+ "cosmwasm-storage",
+ "cw-ownable",
+ "cw-storage-plus 0.16.0",
+ "cw2",
+ "cw20",
+ "cw20-base",
+ "nibiru-std",
+ "schemars",
+ "serde",
+ "serde_json",
+ "snafu",
+ "thiserror",
+]
+
+[[package]]
 name = "nexus_rewards_dispatcher"
 version = "0.1.0"
 dependencies = [

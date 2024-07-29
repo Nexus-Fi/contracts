@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 pub enum BondType {
     stnibi,
     BondRewards,
-    Restake
+    
 }
 
 pub type UnbondRequest = Vec<(u64, Uint128)>;
@@ -25,6 +25,7 @@ pub struct InstantiateMsg {
 pub struct State {
     #[serde(skip_serializing, skip_deserializing)]
     pub total_stnibi_issued: Uint128,
+    pub total_rstnibi_issued:Uint128,
     pub stnibi_exchange_rate: Decimal,
     pub total_bond_stnibi_amount: Uint128,
     pub prev_hub_balance: Uint128,
@@ -39,9 +40,12 @@ pub struct Config {
     pub reward_dispatcher_contract: Option<Addr>,
     pub validators_registry_contract: Option<Addr>,
     pub stnibi_token_contract: Option<Addr>,
+    pub rstnibi_token_contract:Option<Addr>,
     pub stnibi_reserve:Option<Uint128>,
     pub total_bonded:Uint128
 }
+
+
 // #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 // pub struct RewardInfo {
 //     pub native_token: bool,
@@ -90,6 +94,7 @@ pub enum ExecuteMsg {
         rewards_dispatcher_contract: Option<String>,
         validators_registry_contract: Option<String>,
         stnibi_token_contract: Option<String>,
+        rstnibi_token_contract:Option<String>
     },
 
     /// update the parameters that is needed for the contract
@@ -155,7 +160,9 @@ pub enum ExecuteMsg {
     },
     DepositLiquidity { stnibi_amount:Uint128, nusd_amount:Uint128 },
     WithdrawLiquidity {  },
-    Swap { from_token:String, to_token:String, amount:Uint128 }
+    Swap { from_token:String, to_token:String, amount:Uint128 },
+    BurnRestakeNibi{ },
+    CreateDenom { subdenom:String }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -227,9 +234,6 @@ pub struct RestakeResponse {
     pub Staker: String,
     pub stnibi_amount: Uint128,
 }
-
-
-
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct CurrentBatchResponse {

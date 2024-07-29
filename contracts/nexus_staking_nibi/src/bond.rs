@@ -14,16 +14,16 @@
 
 use crate::contract::slashing;
 use crate::math::decimal_division;
-use crate::state::{StakerInfo, CONFIG, CURRENT_BATCH, PARAMETERS, STAKERINFO, STATE};
+use crate::state::{StakerInfo, CONFIG, CURRENT_BATCH, PARAMETERS, STAKERINFO, STATE, TOKEN_SUPPLY};
 use basset::hub::{BondType, Parameters};
 use cosmwasm_std::{
-    attr, to_binary, Coin, CosmosMsg, DepsMut, Env, MessageInfo, QueryRequest, Response,
-    StakingMsg, StdError, StdResult, Uint128, WasmMsg, WasmQuery,
+    attr, to_binary, Coin, CosmosMsg, DepsMut, Env, MessageInfo, QueryRequest, Response, StakingMsg, StdError, StdResult, Uint128, Uint256, WasmMsg, WasmQuery
 };
 use cw20::Cw20ExecuteMsg;
 use nexus_validator_registary::common::calculate_delegations;
 use nexus_validator_registary::msg::QueryMsg as QueryValidators;
 use nexus_validator_registary::registry::ValidatorResponse;
+use nibiru_std::proto::{cosmos, nibiru, NibiruStargateMsg};
 use serde::de::IntoDeserializer;
 
 pub fn execute_bond(
@@ -37,10 +37,8 @@ pub fn execute_bond(
         return Err(StdError::generic_err("the contract is temporarily paused"));
     }
     let epoch_period = params.clone().epoch_period;
-    let unbondng_period = params.clone().unbonding_period;
     let coin_denom = params.underlying_coin_denom;
     let config = CONFIG.load(deps.storage)?;
-    let restake_coin_denom = String::from("stNIBI");
     let reward_dispatcher_addr = config.reward_dispatcher_contract.ok_or_else(|| {
         StdError::generic_err("the reward dispatcher contract must have been registered")
     })?;
@@ -70,7 +68,7 @@ pub fn execute_bond(
         })?;
         let time = env.clone().block.time.seconds();
     // check slashing
-    let state = slashing(&mut deps, env)?;
+    let state = slashing(&mut deps, env.clone())?;
 
     let sender = info.sender.clone();
 
@@ -80,7 +78,6 @@ pub fn execute_bond(
     let mint_amount = match bond_type {
         BondType::stnibi => decimal_division(payment.amount, state.stnibi_exchange_rate),
         BondType::BondRewards => Uint128::zero(),
-        BondType::Restake => todo!()
         
     };
 
@@ -99,7 +96,6 @@ pub fn execute_bond(
                 prev_state.total_bond_stnibi_amount += payment.amount;
                 Ok(prev_state)
             },
-            BondType::Restake => todo!()
 
         }
     })?;
@@ -145,30 +141,65 @@ pub fn execute_bond(
             ]);
         return Ok(res);
     }
+    let contract_addr: String = env.clone().contract.address.into();
+    let coin_denom = "".to_string();
+    let cosmos_msg: CosmosMsg = nibiru::tokenfactory::MsgMint {
+        sender: contract_addr,
+        // TODO feat: cosmwasm-std Coin should implement into()
+        // base::v1beta1::Coin.
+        coin: Some(cosmos::base::v1beta1::Coin {
+            denom: coin_denom.to_string(),
+            amount: mint_amount.to_string(),
+        }),
+        mint_to:sender.to_string(),
+    }
+    .into_stargate_msg();
 
-    let mint_msg = Cw20ExecuteMsg::Mint {
-        recipient: sender.to_string(),
-        amount: mint_amount,
-    };
+    // let mint_msg = Cw20ExecuteMsg::Mint {
+    //     recipient: sender.to_string(),
+    //     amount: mint_amount,
+    // };
+    let denom_parts: Vec<&str> = coin_denom.split('/').collect();
+    if denom_parts.len() != 3 {
+        return Err(StdError::GenericErr {
+            msg: "invalid denom input".to_string(),
+        }
+        .into());
+    }
+    let subdenom = denom_parts[2];
+    let supply_key = subdenom;
+    let token_supply =
+    TOKEN_SUPPLY.may_load(deps.storage, supply_key)?;
+    match token_supply {
+        Some(supply) => {
+            let new_supply = supply + Uint256::from(mint_amount);
+            TOKEN_SUPPLY.save(deps.storage, supply_key, &new_supply)
+        }?,
+        None => TOKEN_SUPPLY.save(
+            deps.storage,
+            supply_key,
+            &Uint256::from(mint_amount),
+        )?,
+    }
+    // let token_address = config
+    //     .stnibi_token_contract
+    //     .ok_or_else(|| StdError::generic_err("the token contract must have been registered"))?;
 
-    let token_address = config
-        .stnibi_token_contract
-        .ok_or_else(|| StdError::generic_err("the token contract must have been registered"))?;
+    external_call_msgs.push(cosmos_msg);
 
-    external_call_msgs.push(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: token_address.to_string(),
-        msg: to_binary(&mint_msg)?,
-        funds: vec![],
-    }));
+   
     let staker_info = STAKERINFO.may_load(deps.storage, info.sender.clone().into_string())?;
    let new_staker_info = match staker_info {
-        Some(d) =>{
-            d
+        Some(mut d) =>{
+                d.amount_staked_unibi += payment.amount;
+                d.amount_staked_stnibi += mint_amount;
+                d            
         },
         None =>{
             StakerInfo{
                 amount_staked_unibi: payment.amount,
                 amount_staked_stnibi: mint_amount,
+                amount_restaked_rstnibi:Uint128::zero(),
                 bonding_time: time.into(),
                 epoch_period: epoch_period.into(),
                 validator_list: validators,
@@ -176,8 +207,8 @@ pub fn execute_bond(
         }
 
     };
+    let _  = STAKERINFO.save(deps.storage, info.sender.into_string().clone(),&new_staker_info );
 
-    let _ =STAKERINFO.save(deps.storage, info.sender.into_string(), &new_staker_info);
     let res = Response::new()
         .add_messages(external_call_msgs)
         .add_attributes(vec![

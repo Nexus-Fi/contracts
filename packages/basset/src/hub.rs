@@ -1,7 +1,7 @@
 use cosmwasm_std::{
     to_binary, Addr, Coin, Decimal, Deps, QueryRequest, StdResult, Timestamp, Uint128, WasmQuery
 };
-use cw20::Cw20ReceiveMsg;
+use cw20::{Cw20ReceiveMsg, Denom};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -40,9 +40,9 @@ pub struct Config {
     pub reward_dispatcher_contract: Option<Addr>,
     pub validators_registry_contract: Option<Addr>,
     pub stnibi_token_contract: Option<Addr>,
-    pub rstnibi_token_contract:Option<Addr>,
     pub stnibi_reserve:Option<Uint128>,
-    pub total_bonded:Uint128
+    pub total_bonded:Uint128,
+    pub stnibi_denom:Option<String>
 }
 
 
@@ -93,8 +93,8 @@ pub enum ExecuteMsg {
         owner: Option<String>,
         rewards_dispatcher_contract: Option<String>,
         validators_registry_contract: Option<String>,
-        stnibi_token_contract: Option<String>,
-        rstnibi_token_contract:Option<String>
+        // stnibi_token_contract: Option<String>,  
+        stnibi_denom:Option<String>
     },
 
     /// update the parameters that is needed for the contract
@@ -120,7 +120,6 @@ pub enum ExecuteMsg {
 
     BondRewards {},
 
-    Restake {cwmsg:Cw20ReceiveMsg},
 
     /// Dispatch Rewards
     DispatchRewards {},
@@ -162,9 +161,12 @@ pub enum ExecuteMsg {
     WithdrawLiquidity {  },
     Swap { from_token:String, to_token:String, amount:Uint128 },
     BurnRestakeNibi{ },
-    CreateDenom { subdenom:String }
+    CreateDenom { subdenom:String },
 }
-
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct CoinDenom{
+    stnibi:String
+}
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Cw20HookMsg {

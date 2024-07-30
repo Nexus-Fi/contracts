@@ -35,7 +35,7 @@ use basset::hub::{
 use basset::hub::{Cw20HookMsg, ExecuteMsg};
 use cw20::{Cw20ExecuteMsg, Cw20QueryMsg, Cw20ReceiveMsg, TokenInfoResponse};
 use nexus_rewards_dispatcher::msg::ExecuteMsg::DispatchRewards;
-use crate::restaking::{execute_restake_bond, execute_restake_bond_test};
+// use crate::restaking::{execute_restake_bond, execute_restake_bond_test};
 
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -48,7 +48,7 @@ pub fn instantiate(
     let sender = info.sender;
 
     // store config
-    let data = Config {creator:sender,reward_dispatcher_contract:None,validators_registry_contract:None,stnibi_token_contract:None, stnibi_reserve:None,total_bonded:Uint128::zero(),rstnibi_token_contract:None };
+    let data = Config {creator:sender,reward_dispatcher_contract:None,validators_registry_contract:None,stnibi_token_contract:None, stnibi_reserve:None,total_bonded:Uint128::zero(),stnibi_denom:None};
     CONFIG.save(deps.storage, &data)?;
 
     // store state
@@ -91,14 +91,13 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
                     subdenom,
                 }
                 .into_stargate_msg();
-    
+         
                 Ok(Response::new()
                     // .add_event()
                     .add_message(cosmos_msg))
             }
             ExecuteMsg::BondForstnibi {} => execute_bond(deps, env, info, BondType::stnibi),
             ExecuteMsg::BondRewards {} => execute_bond(deps, env, info, BondType::BondRewards),
-            ExecuteMsg::Restake {cwmsg} => receive_cw20_stnibi(deps, env, info,cwmsg),
             ExecuteMsg::DispatchRewards {} => execute_dispatch_rewards(deps, env, info),
             ExecuteMsg::WithdrawUnbonded {} => execute_withdraw_unbonded(deps, env, info),
             ExecuteMsg::CheckSlashing {} => execute_slashing(deps, env),
@@ -110,17 +109,17 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
                 owner,
                 rewards_dispatcher_contract,
                 validators_registry_contract,
-                stnibi_token_contract,
-                rstnibi_token_contract
+                // stnibi_token_contract,
+                stnibi_denom
             } => execute_update_config(
                 deps,
                 env,
                 info,
                 owner,
                 rewards_dispatcher_contract,
-                stnibi_token_contract,
+                // stnibi_token_contract,
                 validators_registry_contract,
-                rstnibi_token_contract
+                stnibi_denom
             ),
             ExecuteMsg::RedelegateProxy {
                 src_validator,
@@ -142,98 +141,100 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
                 todo!()
             }
             ExecuteMsg::BurnRestakeNibi{ } =>{
-                burn_rstnibi_token(deps, env, info)
-            }
+                // burn_rstnibi_token(deps, env, info)
+                todo!()
+            },
+           
     }
 }
 
 
-pub fn receive_cw20_stnibi(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    cw20_msg: Cw20ReceiveMsg,
-) -> StdResult<Response> {
-    match from_binary(&cw20_msg.msg) {
-        Ok(Cw20HookMsg::Restake {}) => bond(
-            deps,
-            env,
-            Addr::unchecked(cw20_msg.sender),
-            info.sender,
-            cw20_msg.amount,
-        ),
-        Ok(Cw20HookMsg::Unbond {  }) => todo!(),
-        Err(_) => Err(StdError::generic_err("invalid cw20 hook message")),
-    }
-}
+// pub fn receive_cw20_stnibi(
+//     deps: DepsMut,
+//     env: Env,
+//     info: MessageInfo,
+//     cw20_msg: Cw20ReceiveMsg,
+// ) -> StdResult<Response> {
+//     match from_binary(&cw20_msg.msg) {
+//         Ok(Cw20HookMsg::Restake {}) => bond(
+//             deps,
+//             env,
+//             Addr::unchecked(cw20_msg.sender),
+//             info.sender,
+//             cw20_msg.amount,
+//         ),
+//         Ok(Cw20HookMsg::Unbond {  }) => todo!(),
+//         Err(_) => Err(StdError::generic_err("invalid cw20 hook message")),
+//     }
+// }
 
 
-pub fn bond(
-    mut deps: DepsMut,
-    env: Env,
-    staker_addr: Addr,
-    staking_token: Addr,
-    amount: Uint128,
-) -> StdResult<Response> {
+// pub fn bond(
+//     mut deps: DepsMut,
+//     env: Env,
+//     staker_addr: Addr,
+//     staking_token: Addr,
+//     amount: Uint128,
+// ) -> StdResult<Response> {
     
-    let storage = deps.storage; 
-    let existing_balance = LPTOKENS.may_load(storage, staker_addr.clone().into_string())?;
-    let eb = match existing_balance {
-        Some(d) =>{
-            d +amount
-        },
-        None =>{
-            amount
-        }
-    };
+//     let storage = deps.storage; 
+//     let existing_balance = LPTOKENS.may_load(storage, staker_addr.clone().into_string())?;
+//     let eb = match existing_balance {
+//         Some(d) =>{
+//             d +amount
+//         },
+//         None =>{
+//             amount
+//         }
+//     };
 
-    // Update the user's balance in the map
-    LPTOKENS.save(storage, staker_addr.clone().into_string(), &eb)?;
+//     // Update the user's balance in the map
+//     LPTOKENS.save(storage, staker_addr.clone().into_string(), &eb)?;
 
-    let mint_msg = Cw20ExecuteMsg::Mint {
-        recipient: staker_addr.to_string(),
-        amount: amount,
-    };
-    let conf = CONFIG.load(storage).unwrap();
-    let token_address = conf
-    .rstnibi_token_contract
-    .ok_or_else(|| StdError::generic_err("the restake token contract must have been registered"))?;
-    let mut external_call_msgs: Vec<cosmwasm_std::CosmosMsg> = vec![];
-    external_call_msgs.push(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: token_address.to_string(),
-        msg: to_binary(&mint_msg)?,
-        funds: vec![],
-    }));
-    // let validators = [
-    //     ValidatorResponse{
-    //         total_delegated:0,
-    //         address:"".to_string()
-    //     }
-    // ];
+//     let mint_msg = Cw20ExecuteMsg::Mint {
+//         recipient: staker_addr.to_string(),
+//         amount: amount,
+//     };
+//     let conf = CONFIG.load(storage).unwrap();
+//     // let token_address = conf
+//     // .rstnibi_token_contract
+//     // .ok_or_else(|| StdError::generic_err("the restake token contract must have been registered"))?;
+//     // let mut external_call_msgs: Vec<cosmwasm_std::CosmosMsg> = vec![];
+//     // external_call_msgs.push(CosmosMsg::Wasm(WasmMsg::Execute {
+//     //     contract_addr: token_address.to_string(),
+//     //     msg: to_binary(&mint_msg)?,
+//     //     funds: vec![],
+//     // }));
+//     // let validators = [
+//     //     ValidatorResponse{
+//     //         total_delegated:0,
+//     //         address:"".to_string()
+//     //     }
+//     // ];
 
-    let staker_info = STAKERINFO.may_load(storage, staker_addr.clone().into_string())?;
-    let new_staker_info = match staker_info {
-        Some(mut d) =>{
-                d.amount_restaked_rstnibi += amount;
-                d.amount_staked_stnibi -=amount;
-                d            
-        },
-        None =>{
-            return Err(StdError::generic_err(
-                "NIBI not staked",
-            ));
-        }
+//     let staker_info = STAKERINFO.may_load(storage, staker_addr.clone().into_string())?;
+//     let new_staker_info = match staker_info {
+//         Some(mut d) =>{
+//                 d.amount_restaked_rstnibi += amount;
+//                 d.amount_staked_stnibi -=amount;
+//                 d            
+//         },
+//         None =>{
+//             return Err(StdError::generic_err(
+//                 "NIBI not staked",
+//             ));
+//         }
 
-    };
-    let _  = STAKERINFO.save(storage, staker_addr.clone().into_string().clone(),&new_staker_info );
+//     };
+//     let _  = STAKERINFO.save(storage, staker_addr.clone().into_string().clone(),&new_staker_info );
 
-    Ok(Response::new().add_messages(external_call_msgs).add_attributes([
-        attr("action", "mint"),
-        attr("from", staker_addr.into_string()),
-        attr("bonded", amount),
-        attr("minted", amount),
-    ]))
-}
+//     Ok(Response::new().add_messages(external_call_msgs).add_attributes([
+//         attr("action", "mint"),
+//         attr("from", staker_addr.into_string()),
+//         attr("bonded", amount),
+//         attr("minted", amount),
+//     ]))
+// }
 
 
 
@@ -355,6 +356,7 @@ pub fn execute_unpause_contracts(
     Ok(res)
 }
 
+
 // fn _increase_bond_amount(
 //     deps:DepsMut,
 //     amount: Uint128,
@@ -450,6 +452,7 @@ pub fn receive_cw20(
         Cw20HookMsg::Restake {  } => todo!()
     }
 }
+
 
 
 /// Permissionless
@@ -722,38 +725,38 @@ pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Respons
     Ok(Response::new())
 }
 
-fn burn_rstnibi_token(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-) -> StdResult<Response> {
-    let sender = info.sender.to_string();
+// fn burn_rstnibi_token(
+//     deps: DepsMut,
+//     env: Env,
+//     info: MessageInfo,
+// ) -> StdResult<Response> {
+//     let sender = info.sender.to_string();
 
-    let conf = CONFIG.load(deps.storage)?;
-    let storage = deps.storage; 
-    let st = STAKERINFO.may_load(storage, sender.clone()).unwrap();
-    let restaking_token = conf.rstnibi_token_contract.unwrap().to_string();
-    let burn_rstnibi_amount: Uint128 = st.clone().unwrap().amount_restaked_rstnibi;
+//     let conf = CONFIG.load(deps.storage)?;
+//     let storage = deps.storage; 
+//     let st = STAKERINFO.may_load(storage, sender.clone()).unwrap();
+//     let restaking_token = conf.rstnibi_token_contract.unwrap().to_string();
+//     let burn_rstnibi_amount: Uint128 = st.clone().unwrap().amount_restaked_rstnibi;
 
-    let burn_msg = Cw20ExecuteMsg::Burn { amount:burn_rstnibi_amount };
-    let mut messages: Vec<CosmosMsg> = vec![];
+//     let burn_msg = Cw20ExecuteMsg::Burn { amount:burn_rstnibi_amount };
+//     let mut messages: Vec<CosmosMsg> = vec![];
 
-    let burn_m:CosmosMsg = CosmosMsg::Wasm(WasmMsg::Execute {
-         contract_addr: restaking_token,
-         msg: to_binary(&burn_msg)?,
-         funds: vec![],
-     });
-     messages.push(burn_m); 
+//     let burn_m:CosmosMsg = CosmosMsg::Wasm(WasmMsg::Execute {
+//          contract_addr: restaking_token,
+//          msg: to_binary(&burn_msg)?,
+//          funds: vec![],
+//      });
+//      messages.push(burn_m); 
 
-     let res = Response::new().add_messages(messages).add_attributes(vec![
-        attr("action", "burn"),
-        attr("from", sender),
-        attr("burnt_amount", burn_rstnibi_amount),
-        attr("unbonded_amount", burn_rstnibi_amount),
-    ]);
- Ok(res)
+//      let res = Response::new().add_messages(messages).add_attributes(vec![
+//         attr("action", "burn"),
+//         attr("from", sender),
+//         attr("burnt_amount", burn_rstnibi_amount),
+//         attr("unbonded_amount", burn_rstnibi_amount),
+//     ]);
+//  Ok(res)
 
-}
+// }
 
 
 // Withdraw liquidity function

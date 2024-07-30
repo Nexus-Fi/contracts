@@ -17,11 +17,10 @@ use cosmwasm_std::{from_slice, to_vec, Addr, Decimal, Order, StdError, StdResult
 use cosmwasm_storage::{Bucket, PrefixedStorage, ReadonlyBucket, ReadonlyPrefixedStorage};
 use nexus_validator_registary::registry::ValidatorResponse;
 use cosmwasm_std::Uint256;
-
 use cw_storage_plus::{Item, Map, SnapshotMap, Strategy};
 
 use basset::hub::{
-    Config, CurrentBatch, Parameters , State, UnbondHistory, UnbondRequest, UnbondWaitEntity
+    CoinDenom,Config, CurrentBatch, Parameters , State, UnbondHistory, UnbondRequest, UnbondWaitEntity
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -38,8 +37,8 @@ pub const LPTOKENS: Map<String, Uint128>=Map::new("lptokens");
 pub const RESTAKETOKENS: Map<String, Uint128>=Map::new("restaketokens");
 pub static PREFIX_WAIT_MAP: &[u8] = b"wait";
 pub static UNBOND_HISTORY_MAP: &[u8] = b"history_map";
-pub const TOKEN_SUPPLY: Map<&str, Uint256> = Map::new("token_supply");
-
+pub const TOKEN_SUPPLY: Map<&str, Uint128> = Map::new("token_supply");
+pub const DENOM:Item<CoinDenom> =Item::new("denom");
 pub static PREFIX_REWARD: &[u8] = b"reward_v3";
 
 pub const MAX_DEFAULT_RANGE_LIMIT: u32 = 1000;

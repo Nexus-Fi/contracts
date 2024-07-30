@@ -171,11 +171,11 @@ pub fn restake_stnibi_token(
         msg:to_binary(&Cw20HookMsg::Restake { })?
     }   ;
 
-    let message = CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: hub_contract.to_string(),
-        msg: to_binary(&HubExecutemsg::Restake{cwmsg:msg_cw20_recieve})?,
-        funds: vec![],
-    });
+    // let message = CosmosMsg::Wasm(WasmMsg::Execute {
+    //     contract_addr: hub_contract.to_string(),
+    //     msg: to_binary(&HubExecutemsg::Restake{cwmsg:msg_cw20_recieve})?,
+    //     funds: vec![],
+    // });
     
     // let transfer_stnibi_msg:CosmosMsg = CosmosMsg::Wasm(WasmMsg::Execute {
     //     contract_addr: env.contract.address.to_string(),
@@ -187,7 +187,7 @@ pub fn restake_stnibi_token(
     // });
     // messages.push(transfer_stnibi_msg);
 
-    messages.push(message);
+    // messages.push(message);
     let res = Response::new()
     .add_messages(messages)
     .add_attributes(vec![attr("action", "restake")]);

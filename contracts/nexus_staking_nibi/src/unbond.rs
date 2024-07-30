@@ -26,6 +26,7 @@ use cw20::Cw20ExecuteMsg;
 use nexus_validator_registary::common::calculate_undelegations;
 use nexus_validator_registary::registry::ValidatorResponse;
 use nibiru_std::proto::cosmos::base;
+use nibiru_std::proto::cosmos::tx::config;
 use nibiru_std::proto::NibiruStargateMsg;
 use signed_integers::SignedInt;
 
@@ -339,7 +340,8 @@ pub(crate) fn execute_unbond_stnibi(
     let token_address = config
         .stnibi_token_contract
         .ok_or_else(|| StdError::generic_err("the token contract must have been registered"))?;
-    let coin_denom  ="".to_string() ;
+    let config = CONFIG.load(deps.storage)?;
+    let coin_denom  =config.stnibi_denom.unwrap() ;
     let contract_address = env.clone().contract.address.into_string();
         let cosmos_msg: CosmosMsg = nibiru_std::proto::nibiru::tokenfactory::MsgBurn {
             sender: contract_address.clone(),

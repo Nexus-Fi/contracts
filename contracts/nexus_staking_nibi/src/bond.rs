@@ -84,21 +84,7 @@ pub fn execute_bond(
     // total supply should be updated for exchange rate calculation.
     total_supply += mint_amount;
 
-    // exchange rate should be updated for future
-    STATE.update(deps.storage, |mut prev_state| -> StdResult<_> {
-        match bond_type {
-            BondType::BondRewards => {
-                prev_state.total_bond_stnibi_amount += payment.amount;
-                prev_state.update_stnibi_exchange_rate(total_supply, requested_with_fee);
-                Ok(prev_state)
-            }
-            BondType::stnibi => {
-                prev_state.total_bond_stnibi_amount += payment.amount;
-                Ok(prev_state)
-            },
-
-        }
-    })?;
+    
 
     let validators_registry_contract = if let Some(v) = config.validators_registry_contract {
         v
@@ -142,7 +128,8 @@ pub fn execute_bond(
         return Ok(res);
     }
     let contract_addr: String = env.clone().contract.address.into();
-    let coin_denom = "".to_string();
+    let config = CONFIG.load(deps.storage)?;
+    let coin_denom  =config.stnibi_denom.unwrap() ;
     let cosmos_msg: CosmosMsg = nibiru::tokenfactory::MsgMint {
         sender: contract_addr,
         // TODO feat: cosmwasm-std Coin should implement into()
@@ -172,21 +159,39 @@ pub fn execute_bond(
     TOKEN_SUPPLY.may_load(deps.storage, supply_key)?;
     match token_supply {
         Some(supply) => {
-            let new_supply = supply + Uint256::from(mint_amount);
+            let new_supply = supply + Uint128::from(mint_amount);
             TOKEN_SUPPLY.save(deps.storage, supply_key, &new_supply)
         }?,
         None => TOKEN_SUPPLY.save(
             deps.storage,
             supply_key,
-            &Uint256::from(mint_amount),
+            &Uint128::from(mint_amount),
         )?,
     }
+    let token_supply_ =
+    TOKEN_SUPPLY.may_load(deps.storage, supply_key)?;
+    // exchange rate should be updated for future
+    STATE.update(deps.storage, |mut prev_state| -> StdResult<_> {
+        match bond_type {
+            BondType::BondRewards => {
+                prev_state.total_bond_stnibi_amount += payment.amount;
+                prev_state.update_stnibi_exchange_rate(token_supply_.unwrap().into(), requested_with_fee);
+                Ok(prev_state)
+            }
+            BondType::stnibi => {
+                prev_state.total_bond_stnibi_amount += payment.amount;
+                Ok(prev_state)
+            },
+
+        }
+    })?;
+
     // let token_address = config
     //     .stnibi_token_contract
     //     .ok_or_else(|| StdError::generic_err("the token contract must have been registered"))?;
 
     external_call_msgs.push(cosmos_msg);
-
+    
    
     let staker_info = STAKERINFO.may_load(deps.storage, info.sender.clone().into_string())?;
    let new_staker_info = match staker_info {

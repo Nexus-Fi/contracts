@@ -378,7 +378,7 @@ pub fn execute_unpause_contracts(
 //     reward_info.pending_reward += pending_reward;
 //     Ok(())
 // }
-
+    
 pub fn execute_redelegate_proxy(
     deps: DepsMut,
     _env: Env,

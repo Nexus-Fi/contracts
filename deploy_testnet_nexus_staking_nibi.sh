@@ -70,6 +70,12 @@ CONTRACT_ADDRESS="$(cat inititate_staking.init.json | jq -r '.logs[0].events[1].
 echo 'CONTRACT_ADDRESS:'
 echo $CONTRACT_ADDRESS
 
+nibid tx wasm execute $CONTRACT_ADDRESS "$(cat create_denom.json)" \
+      --from $FROM \
+      --gas auto \
+      --gas-adjustment 1.5 \
+      --gas-prices 0.025unibi \
+      --yes | jq -rcs '.[0].txhash'
 
 # nibid tx wasm execute $CONTRACT_ADDRESS "$(cat recieve.json)" \
 #       --amount 3tf/nibi184n3nnvufu7gqch7md3ne6qyy4lmes5hmqfzd3ehm7atcm2gxwtqmx5z6a/zzz \

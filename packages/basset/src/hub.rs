@@ -158,9 +158,12 @@ pub enum ExecuteMsg {
         addresses: Vec<String>,
     },
     DepositLiquidity { stnibi_amount:Uint128, nusd_amount:Uint128 },
+    /// withdraw stnibi
     WithdrawLiquidity {  },
     Swap { from_token:String, to_token:String, amount:Uint128 },
+    ///unstake stnibi
     BurnRestakeNibi{ },
+    ///create the token denom
     CreateDenom { subdenom:String },
 }
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

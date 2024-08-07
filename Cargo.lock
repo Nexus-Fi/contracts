@@ -641,27 +641,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nexus_restake_rstnibi"
-version = "0.1.0"
-dependencies = [
- "basset",
- "cosmwasm-schema 2.1.1",
- "cosmwasm-std",
- "cosmwasm-storage",
- "cw-ownable",
- "cw-storage-plus 0.16.0",
- "cw2",
- "cw20",
- "cw20-base",
- "nibiru-std",
- "schemars",
- "serde",
- "serde_json",
- "snafu",
- "thiserror",
-]
-
-[[package]]
 name = "nexus_rewards_dispatcher"
 version = "0.1.0"
 dependencies = [
@@ -700,27 +679,6 @@ dependencies = [
  "serde",
  "serde_json",
  "signed_integers",
- "snafu",
- "thiserror",
-]
-
-[[package]]
-name = "nexus_stnibi_token_test"
-version = "0.1.0"
-dependencies = [
- "basset",
- "cosmwasm-schema 2.1.1",
- "cosmwasm-std",
- "cosmwasm-storage",
- "cw-ownable",
- "cw-storage-plus 0.16.0",
- "cw2",
- "cw20",
- "cw20-base",
- "nibiru-std",
- "schemars",
- "serde",
- "serde_json",
  "snafu",
  "thiserror",
 ]

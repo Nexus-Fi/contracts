@@ -4,18 +4,34 @@ use serde::{Deserialize, Serialize};
 
 /// boolean is set for specifying the negativity.
 /// false means the value is positive.
+
+// pub struct SignedInt(#[schemars(with = "String")] pub Uint256, pub bool);
+
+// impl SignedInt {
+//     pub fn from_subtraction<A:Into<Uint256>, B: Into<Uint256>>(
+//         minuend: A,
+//         subtrahend: B,
+//     ) -> SignedInt {
+//         let minuend: Uint256 = minuend.into();
+//         let subtrahend: Uint256 = subtrahend.into();
+//         let subtraction = minuend.checked_sub(subtrahend);
+//         if subtraction.is_err() {
+//             return SignedInt((subtrahend.checked_sub(minuend)).unwrap(), true);
+//         }
+//         SignedInt(subtraction.unwrap(), false)
+//     }
+// }
 #[derive(
     Serialize, Deserialize, Copy, Clone, Default, Debug, PartialEq, Eq, PartialOrd, Ord, JsonSchema,
 )]
-pub struct SignedInt(#[schemars(with = "String")] pub Uint256, pub bool);
-
+pub struct SignedInt(#[schemars(with = "String")] pub Uint128, pub bool);
 impl SignedInt {
-    pub fn from_subtraction<A:Into<Uint256>, B: Into<Uint256>>(
+    pub fn from_subtraction<A: Into<Uint128>, B: Into<Uint128>>(
         minuend: A,
         subtrahend: B,
     ) -> SignedInt {
-        let minuend: Uint256 = minuend.into();
-        let subtrahend: Uint256 = subtrahend.into();
+        let minuend: Uint128 = minuend.into();
+        let subtrahend: Uint128 = subtrahend.into();
         let subtraction = minuend.checked_sub(subtrahend);
         if subtraction.is_err() {
             return SignedInt((subtrahend.checked_sub(minuend)).unwrap(), true);

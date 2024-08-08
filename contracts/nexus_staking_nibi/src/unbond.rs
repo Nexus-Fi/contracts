@@ -85,9 +85,8 @@ pub fn execute_withdraw_unbonded(
     let staker_info = STAKERINFO.may_load(deps.storage, sender_human.clone().into_string())?;
     let new_staker_info = match staker_info {
         Some(mut d) =>{
-                // d.amount_restaked_rstnibi = Uint128::zero();
-                // d.amount_staked_stnibi = Uint128::zero();
-                d.amount_staked_unibi += withdraw_amount;
+                d.amount_stnibi_balance -= withdraw_amount;
+                d.amount_staked_unibi -= withdraw_amount;
                 d            
         },
         None =>{
@@ -106,7 +105,7 @@ pub fn execute_withdraw_unbonded(
     ]);
     Ok(res)
 }
-
+ 
 fn calculate_newly_added_unbonded_amount(
     storage: &mut dyn Storage,
     last_processed_batch: u64,
@@ -175,22 +174,33 @@ fn calculate_new_withdraw_rate(
         };
         actual_unbonded_amount_of_batch = unbonded_amount_of_batch + slashed_amount_of_batch;
     } else {
-        if slashed_amount.0 != Uint256::zero() {
+        if slashed_amount.0.u128() != 0u128 {
             slashed_amount_of_batch += Uint256::one();
         }
+        // Convert to Uint128 for subtraction, ensuring it's within Uint128 range
+        let unbonded_amount_of_batch_128 = Uint128::try_from(unbonded_amount_of_batch).expect("Exceeds Uint128 range");
+        let slashed_amount_of_batch_128 = Uint128::try_from(slashed_amount_of_batch).expect("Exceeds Uint128 range");
+
         actual_unbonded_amount_of_batch = Uint256::from(
-            SignedInt::from_subtraction(unbonded_amount_of_batch, slashed_amount_of_batch).0,
+            SignedInt::from_subtraction(unbonded_amount_of_batch_128, slashed_amount_of_batch_128).0,
         );
     }
 
     // Calculate the new withdraw rate
     if burnt_amount_of_batch != Uint256::zero() {
-        withdraw_rate /******************** ERRORRRR  */
-        // Decimal::from_ratio(actual_unbonded_amount_of_batch, burnt_amount_of_batch)
+         // Convert actual_unbonded_amount_of_batch to Uint128 before calling from_ratio
+         let actual_unbonded_amount_of_batch_128 = Uint128::try_from(actual_unbonded_amount_of_batch)
+         .expect("actual_unbonded_amount_of_batch_128 Exceeds Uint128 range");
+     let burnt_amount_of_batch_128 = Uint128::try_from(burnt_amount_of_batch)
+         .expect("burnt_amount_of_batch_128 Exceeds Uint128 range");
+
+        Decimal::from_ratio(actual_unbonded_amount_of_batch_128, burnt_amount_of_batch_128)
     } else {
         withdraw_rate
     }
 }
+
+
 
 /// This is designed for an accurate unbonded amount calculation.
 /// Execute while processing withdraw_unbonded
@@ -213,9 +223,17 @@ fn process_withdraw_rate(
     let balance_change = SignedInt::from_subtraction(hub_balance, state.prev_hub_balance);
     let actual_unbonded_amount = balance_change.0;
 
+
+    // Convert Uint256 to Uint128 safely
+    let actual_unbonded_amount_128 = Uint128::try_from(actual_unbonded_amount)
+        .expect("Value exceeds Uint128 range");
+
+        let stnibi_total_unbonded_amount_128 = Uint128::try_from(stnibi_total_unbonded_amount)
+        .expect("Value exceeds Uint128 range");
+
     let stnibi_slashed_amount = SignedInt::from_subtraction(
-        stnibi_total_unbonded_amount,
-        Uint256::from(actual_unbonded_amount),
+        stnibi_total_unbonded_amount_128,
+        actual_unbonded_amount_128,
     );
 
     // Iterate again to calculate the withdraw rate for each unprocessed history
@@ -367,7 +385,7 @@ pub(crate) fn execute_unbond_stnibi(
 
     let new_staker_info = match staker_info {
         Some(mut d) =>{
-                d.amount_staked_stnibi -= amount;
+                d.amount_stnibi_balance -= amount;
                 d            
         },
         None =>{

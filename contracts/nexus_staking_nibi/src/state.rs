@@ -60,12 +60,12 @@ pub static PREFIX_POOL_INFO: &[u8] = b"pool_info_v3";
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct StakerInfo {
     pub amount_staked_unibi: Uint128,
-    pub amount_staked_stnibi: Uint128,
-    pub amount_restaked_rstnibi:Uint128,
+    pub amount_stnibi_balance: Uint128,
     pub bonding_time:Uint128,
     pub epoch_period:Uint128,
     pub validator_list:Vec<ValidatorResponse>
 }
+
 
 // pub fn read_pool_info(storage: &dyn Storage, asset_key: &[u8]) -> StdResult<PoolInfo> {
 //     ReadonlyBucket::new(storage, PREFIX_POOL_INFO).load(asset_key)

@@ -25,7 +25,6 @@ pub struct InstantiateMsg {
 pub struct State {
     #[serde(skip_serializing, skip_deserializing)]
     pub total_stnibi_issued: Uint128,
-    pub total_rstnibi_issued:Uint128,
     pub stnibi_exchange_rate: Decimal,
     pub total_bond_stnibi_amount: Uint128,
     pub prev_hub_balance: Uint128,
@@ -46,28 +45,6 @@ pub struct Config {
 }
 
 
-// #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-// pub struct RewardInfo {
-//     pub native_token: bool,
-//     pub index: Decimal,
-//     pub bond_amount: Uint128,
-//     pub pending_reward: Uint128,
-//     // this is updated by the owner of this contract, when changing the reward_per_sec
-//     // pub pending_withdraw: Vec<AssetRaw>,
-// }
-// #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-// pub struct LockInfo {
-//     pub amount: Uint128,
-//     pub unlock_time: Timestamp,
-// }
-
-// #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-// pub struct PoolInfo {
-//     pub pending_reward: Uint128, // not distributed amount due to zero bonding
-//     pub total_bond_amount: Uint128,
-//     pub reward_index: Decimal,
-//     pub staker: Addr
-// }
 
 impl State {
     pub fn update_stnibi_exchange_rate(&mut self, total_issued: Uint128, requested: Uint128) {
@@ -160,9 +137,7 @@ pub enum ExecuteMsg {
     DepositLiquidity { stnibi_amount:Uint128, nusd_amount:Uint128 },
     /// withdraw stnibi
     WithdrawLiquidity {  },
-    Swap { from_token:String, to_token:String, amount:Uint128 },
-    ///unstake stnibi
-    BurnRestakeNibi{ },
+   
     ///create the token denom
     CreateDenom { subdenom:String },
 }
@@ -194,11 +169,9 @@ pub struct CurrentBatch {
 pub struct UnbondHistory {
     pub batch_id: u64,
     pub time: u64,
-
     pub stnibi_amount: Uint128,
     pub stnibi_applied_exchange_rate: Decimal,
     pub stnibi_withdraw_rate: Decimal,
-
     pub released: bool,
 }
 

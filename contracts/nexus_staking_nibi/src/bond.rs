@@ -19,12 +19,10 @@ use basset::hub::{BondType, Parameters};
 use cosmwasm_std::{
     attr, to_binary, Coin, CosmosMsg, DepsMut, Env, MessageInfo, QueryRequest, Response, StakingMsg, StdError, StdResult, Uint128, Uint256, WasmMsg, WasmQuery
 };
-use cw20::Cw20ExecuteMsg;
 use nexus_validator_registary::common::calculate_delegations;
 use nexus_validator_registary::msg::QueryMsg as QueryValidators;
 use nexus_validator_registary::registry::ValidatorResponse;
 use nibiru_std::proto::{cosmos, nibiru, NibiruStargateMsg};
-use serde::de::IntoDeserializer;
 
 pub fn execute_bond(
     mut deps: DepsMut,
@@ -46,7 +44,7 @@ pub fn execute_bond(
     if bond_type == BondType::BondRewards && info.sender != reward_dispatcher_addr {
         return Err(StdError::generic_err("unauthorized"));
     }
-
+    
     // current batch requested fee is need for accurate exchange rate computation.
     let current_batch = CURRENT_BATCH.load(deps.storage)?;
     let requested_with_fee = current_batch.requested_stnibi;
@@ -57,7 +55,6 @@ pub fn execute_bond(
             "More than one coin is sent; only one asset is supported",
         ));
     }
-
     // coin must have be sent along with transaction and it should be in underlying coin denom
     let payment = info
         .funds
@@ -179,6 +176,7 @@ pub fn execute_bond(
                 Ok(prev_state)
             }
             BondType::stnibi => {
+                prev_state.total_stnibi_issued = total_supply;
                 prev_state.total_bond_stnibi_amount += payment.amount;
                 Ok(prev_state)
             },
@@ -194,17 +192,16 @@ pub fn execute_bond(
     
    
     let staker_info = STAKERINFO.may_load(deps.storage, info.sender.clone().into_string())?;
-   let new_staker_info = match staker_info {
+    let new_staker_info = match staker_info {
         Some(mut d) =>{
                 d.amount_staked_unibi += payment.amount;
-                d.amount_staked_stnibi += mint_amount;
+                d.amount_stnibi_balance += mint_amount;
                 d            
         },
         None =>{
             StakerInfo{
                 amount_staked_unibi: payment.amount,
-                amount_staked_stnibi: mint_amount,
-                amount_restaked_rstnibi:Uint128::zero(),
+                amount_stnibi_balance: mint_amount,
                 bonding_time: time.into(),
                 epoch_period: epoch_period.into(),
                 validator_list: validators,

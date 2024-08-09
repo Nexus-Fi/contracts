@@ -226,16 +226,16 @@ fn process_withdraw_rate(
 
     // Convert Uint256 to Uint128 safely
     let actual_unbonded_amount_128 = Uint128::try_from(actual_unbonded_amount)
-        .expect("Value exceeds Uint128 range");
+        .expect("actual_unbonded_amount_128 exceeds Uint128 range");
 
         let stnibi_total_unbonded_amount_128 = Uint128::try_from(stnibi_total_unbonded_amount)
-        .expect("Value exceeds Uint128 range");
+        .expect("stnibi_total_unbonded_amount_128 exceeds Uint128 range");
 
     let stnibi_slashed_amount = SignedInt::from_subtraction(
         stnibi_total_unbonded_amount_128,
         actual_unbonded_amount_128,
     );
-
+    
     // Iterate again to calculate the withdraw rate for each unprocessed history
     let mut iterator = last_processed_batch + 1;
     loop {

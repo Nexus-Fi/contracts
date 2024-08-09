@@ -43,19 +43,7 @@ pub static PREFIX_REWARD: &[u8] = b"reward_v3";
 
 pub const MAX_DEFAULT_RANGE_LIMIT: u32 = 1000;
 pub static PREFIX_POOL_INFO: &[u8] = b"pool_info_v3";
-// pub const STAKED_BALANCES: SnapshotMap<(&[u8], &Addr), Uint128> = SnapshotMap::new(
-//     "staked_balances",
-//     "staked_balance__checkpoints",
-//     "staked_balance__changelog",
-//     Strategy::EveryBlock,
-// );
 
-// pub const STAKED_TOTAL: SnapshotMap<&[u8], Uint128> = SnapshotMap::new(
-//     "total_staked",
-//     "total_staked__checkpoints",
-//     "total_staked__changelog",
-//     Strategy::EveryBlock,
-// );
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct StakerInfo {
@@ -67,29 +55,6 @@ pub struct StakerInfo {
 }
 
 
-// pub fn read_pool_info(storage: &dyn Storage, asset_key: &[u8]) -> StdResult<PoolInfo> {
-//     ReadonlyBucket::new(storage, PREFIX_POOL_INFO).load(asset_key)
-// }
-
-
-// pub fn rewards_read<'a>(storage: &'a dyn Storage, mut staker: &[u8]) -> ReadonlyBucket<'a, RewardInfo> {
-//     ReadonlyBucket::multilevel(storage, &[PREFIX_REWARD,  staker])
-// }
-// pub fn rewards_store<'a>(storage: &'a mut dyn Storage, staker: &[u8]) -> Bucket<'a, RewardInfo> {
-//     Bucket::multilevel(storage, &[PREFIX_REWARD, staker])
-// }
-
-// pub fn store_pool_info(
-//     storage: &mut dyn Storage,
-//     asset_key: &[u8],
-//     pool_info: &PoolInfo,
-// ) -> StdResult<()> {
-//     Bucket::new(storage, PREFIX_POOL_INFO).save(asset_key, pool_info)
-// }
-// /// returns a bucket with all stakers belong by this staker (query it by staker)
-// pub fn stakers_store<'a>(storage: &'a mut dyn Storage, asset_key: &[u8]) -> Bucket<'a, bool> {
-//     Bucket::multilevel(storage, &[PREFIX_STAKER, asset_key])
-// }
 
 /// Store undelegation wait list per each batch
 /// HashMap<user's address, <batch_id, requested_amount>
@@ -110,47 +75,6 @@ pub fn store_unbond_wait_list(
     })?;
 
     Ok(())
-}
-// pub fn insert_lock_info(
-//     storage: &mut dyn Storage,
-//     asset_key: &[u8],
-//     user: &[u8],
-//     lock_info: LockInfo,
-// ) -> StdResult<()> {
-//     Bucket::multilevel(storage, &[LOCK_INFO, asset_key, user]).save(
-//         &lock_info.unlock_time.seconds().to_be_bytes(),
-//         &lock_info.amount,
-//     )
-// }
-pub fn remove_and_accumulate_lock_info(
-    storage: &mut dyn Storage,
-    asset_key: &[u8],
-    user: &[u8],
-    timestamp: Timestamp,
-) -> StdResult<Uint128> {
-    let mut bucket = Bucket::<Uint128>::multilevel(storage, &[LOCK_INFO, asset_key, user]);
-    let mut remove_timestamps = vec![];
-    let mut accumulate_amount = Uint128::zero();
-
-    // use temporay cursor
-    {
-        let mut cursor = bucket.range(None, None, Order::Ascending);
-        let time_in_seconds = timestamp.seconds().to_be_bytes().to_vec();
-        while let Some(Ok((time, amount))) = cursor.next() {
-            if time.cmp(&time_in_seconds) == std::cmp::Ordering::Greater {
-                break;
-            }
-            remove_timestamps.push(time);
-            accumulate_amount += amount;
-        }
-    }
-
-    // remove timestamp
-    for time in remove_timestamps {
-        bucket.remove(&time);
-    }
-
-    Ok(accumulate_amount)
 }
 
 /// Remove unbond batch id from user's wait list

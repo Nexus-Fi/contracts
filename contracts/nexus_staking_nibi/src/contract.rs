@@ -14,17 +14,16 @@
 
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use nexus_validator_registary::registry::ValidatorResponse;
 use nibiru_std::proto::{nibiru, NibiruStargateMsg};
 use std::string::FromUtf8Error;
 
 use cosmwasm_std::{
-    attr, from_binary, to_binary, Addr, Api, Binary, CanonicalAddr, Coin, CosmosMsg, Decimal, Delegation, Deps, DepsMut, DistributionMsg, Env, MessageInfo, Order, QueryRequest, Response, StakingMsg, StdError, StdResult, Storage, Uint128, Validator, WasmMsg, WasmQuery
+    attr, from_binary, to_binary, Addr, Binary, Coin, CosmosMsg, Decimal, Delegation, Deps, DepsMut, DistributionMsg, Env, MessageInfo, Order, QueryRequest, Response, StakingMsg, StdError, StdResult, Storage, Uint128, Validator, WasmMsg, WasmQuery
 };
 
 use crate::config::{self, execute_update_config, execute_update_params};
 use crate::state::{
-    all_unbond_history, get_unbond_requests, query_get_finished_amount, remove_and_accumulate_lock_info, StakerInfo, CONFIG, CURRENT_BATCH, GUARDIANS, LPTOKENS, PARAMETERS, STAKERINFO, STATE
+    all_unbond_history, get_unbond_requests, query_get_finished_amount, StakerInfo, CONFIG, CURRENT_BATCH, GUARDIANS, LPTOKENS, PARAMETERS, STAKERINFO, STATE
 };
 use crate::unbond::{execute_unbond_stnibi, execute_withdraw_unbonded};
 
@@ -146,28 +145,6 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
 
 
 
-pub fn _withdraw_lock(
-    storage: &mut dyn Storage,
-    env: &Env,
-    staker_addr: &Addr,
-    staking_token: &Addr,
-) -> StdResult<Response> {
-    // execute 10 lock a time
-    let unlock_amount = remove_and_accumulate_lock_info(
-        storage,
-        staking_token.as_bytes(),
-        staker_addr.as_bytes(),
-        env.block.time,
-    )?;
-
-    if unlock_amount.is_zero() {
-        return Ok(Response::new());
-    }
-
-    let unbond_response = _unbond(staker_addr, staking_token, unlock_amount)?;
-
-    Ok(unbond_response)
-}
 
 fn _unbond(staker_addr: &Addr, staking_token_addr: &Addr, amount: Uint128) -> StdResult<Response> {
     let messages: Vec<CosmosMsg> = vec![WasmMsg::Execute {

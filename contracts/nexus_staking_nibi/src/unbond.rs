@@ -21,9 +21,13 @@ use cosmwasm_std::{
     attr, coin, coins, to_binary, BankMsg, CosmosMsg, Decimal, DepsMut, Env, MessageInfo, Response,
     StakingMsg, StdError, StdResult, Storage, Uint128, WasmMsg,Decimal256, Uint256
 };
+
 use cw20::Cw20ExecuteMsg;
 use nexus_validator_registary::common::calculate_undelegations;
 use nexus_validator_registary::registry::ValidatorResponse;
+use nibiru_std::proto::cosmos::base;
+use nibiru_std::proto::cosmos::tx::config;
+use nibiru_std::proto::NibiruStargateMsg;
 use signed_integers::SignedInt;
 
 pub fn execute_withdraw_unbonded(
@@ -78,6 +82,22 @@ pub fn execute_withdraw_unbonded(
     }
     .into()];
 
+    let staker_info = STAKERINFO.may_load(deps.storage, sender_human.clone().into_string())?;
+    let new_staker_info = match staker_info {
+        Some(mut d) =>{
+                d.amount_stnibi_balance -= withdraw_amount;
+                d.amount_staked_unibi -= withdraw_amount;
+                d            
+        },
+        None =>{
+            return Err(StdError::generic_err(
+                "NIBI not staked",
+            ));
+        }
+
+    };
+    let _  = STAKERINFO.save(deps.storage, sender_human.to_string(),&new_staker_info );
+
     let res = Response::new().add_messages(msgs).add_attributes(vec![
         attr("action", "finish_burn"),
         attr("from", contract_address),
@@ -85,7 +105,7 @@ pub fn execute_withdraw_unbonded(
     ]);
     Ok(res)
 }
-
+ 
 fn calculate_newly_added_unbonded_amount(
     storage: &mut dyn Storage,
     last_processed_batch: u64,
@@ -154,22 +174,33 @@ fn calculate_new_withdraw_rate(
         };
         actual_unbonded_amount_of_batch = unbonded_amount_of_batch + slashed_amount_of_batch;
     } else {
-        if slashed_amount.0 != Uint256::zero() {
+        if slashed_amount.0.u128() != 0u128 {
             slashed_amount_of_batch += Uint256::one();
         }
+        // Convert to Uint128 for subtraction, ensuring it's within Uint128 range
+        let unbonded_amount_of_batch_128 = Uint128::try_from(unbonded_amount_of_batch).expect("Exceeds Uint128 range");
+        let slashed_amount_of_batch_128 = Uint128::try_from(slashed_amount_of_batch).expect("Exceeds Uint128 range");
+
         actual_unbonded_amount_of_batch = Uint256::from(
-            SignedInt::from_subtraction(unbonded_amount_of_batch, slashed_amount_of_batch).0,
+            SignedInt::from_subtraction(unbonded_amount_of_batch_128, slashed_amount_of_batch_128).0,
         );
     }
 
     // Calculate the new withdraw rate
     if burnt_amount_of_batch != Uint256::zero() {
-        withdraw_rate /******************** ERRORRRR  */
-        // Decimal::from_ratio(actual_unbonded_amount_of_batch, burnt_amount_of_batch)
+         // Convert actual_unbonded_amount_of_batch to Uint128 before calling from_ratio
+         let actual_unbonded_amount_of_batch_128 = Uint128::try_from(actual_unbonded_amount_of_batch)
+         .expect("actual_unbonded_amount_of_batch_128 Exceeds Uint128 range");
+     let burnt_amount_of_batch_128 = Uint128::try_from(burnt_amount_of_batch)
+         .expect("burnt_amount_of_batch_128 Exceeds Uint128 range");
+
+        Decimal::from_ratio(actual_unbonded_amount_of_batch_128, burnt_amount_of_batch_128)
     } else {
         withdraw_rate
     }
 }
+
+
 
 /// This is designed for an accurate unbonded amount calculation.
 /// Execute while processing withdraw_unbonded
@@ -192,11 +223,19 @@ fn process_withdraw_rate(
     let balance_change = SignedInt::from_subtraction(hub_balance, state.prev_hub_balance);
     let actual_unbonded_amount = balance_change.0;
 
-    let stnibi_slashed_amount = SignedInt::from_subtraction(
-        stnibi_total_unbonded_amount,
-        Uint256::from(actual_unbonded_amount),
-    );
 
+    // Convert Uint256 to Uint128 safely
+    let actual_unbonded_amount_128 = Uint128::try_from(actual_unbonded_amount)
+        .expect("actual_unbonded_amount_128 exceeds Uint128 range");
+
+        let stnibi_total_unbonded_amount_128 = Uint128::try_from(stnibi_total_unbonded_amount)
+        .expect("stnibi_total_unbonded_amount_128 exceeds Uint128 range");
+
+    let stnibi_slashed_amount = SignedInt::from_subtraction(
+        stnibi_total_unbonded_amount_128,
+        actual_unbonded_amount_128,
+    );
+    
     // Iterate again to calculate the withdraw rate for each unprocessed history
     let mut iterator = last_processed_batch + 1;
     loop {
@@ -296,7 +335,7 @@ pub(crate) fn execute_unbond_stnibi(
 
     store_unbond_wait_list(deps.storage, current_batch.id, sender.clone(), amount)?;
 
-    let current_time = env.block.time.seconds();
+    let current_time = env.clone().block.time.seconds();
     let passed_time = current_time - state.last_unbonded_time;
 
     let mut messages: Vec<CosmosMsg> = vec![];
@@ -304,7 +343,7 @@ pub(crate) fn execute_unbond_stnibi(
     // If the epoch period is passed, the undelegate message would be sent.
     if passed_time > epoch_period {
         let mut undelegate_msgs =
-            process_undelegations(&mut deps, env, &mut current_batch, &mut state)?;
+            process_undelegations(&mut deps, env.clone(), &mut current_batch, &mut state)?;
         messages.append(&mut undelegate_msgs);
     }
     
@@ -319,13 +358,45 @@ pub(crate) fn execute_unbond_stnibi(
     let token_address = config
         .stnibi_token_contract
         .ok_or_else(|| StdError::generic_err("the token contract must have been registered"))?;
+    let config = CONFIG.load(deps.storage)?;
+    let coin_denom  =config.stnibi_denom.unwrap() ;
+    let contract_address = env.clone().contract.address.into_string();
+        let cosmos_msg: CosmosMsg = nibiru_std::proto::nibiru::tokenfactory::MsgBurn {
+            sender: contract_address.clone(),
+            // TODO cosmwasm-std Coin should implement into()
+            // base::v1beta1::Coin.
 
-    let burn_msg = Cw20ExecuteMsg::Burn { amount };
-    messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: token_address.to_string(),
-        msg: to_binary(&burn_msg)?,
-        funds: vec![],
-    }));
+            coin: Some(base::v1beta1::Coin {
+                denom: coin_denom.clone(),
+                amount: amount.to_string(),
+            }),
+            burn_from:contract_address,
+        }
+        .into_stargate_msg();
+        
+    // let burn_msg = Cw20ExecuteMsg::Burn { amount };
+    // messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
+    //     contract_addr: token_address.to_string(),
+    //     msg: to_binary(&cosmos_msg)?,
+    //     funds: vec![],
+    // }));
+    messages.push(cosmos_msg);
+    let staker_info = STAKERINFO.may_load(deps.storage,sender.clone()).unwrap();
+
+    let new_staker_info = match staker_info {
+        Some(mut d) =>{
+                d.amount_stnibi_balance -= amount;
+                d            
+        },
+        None =>{
+            return Err(StdError::generic_err(
+                "NIBI not staked",
+            ));
+        }
+
+     };
+
+    let _  = STAKERINFO.save(deps.storage, sender.clone(),&new_staker_info );
 
     let res = Response::new().add_messages(messages).add_attributes(vec![
         attr("action", "burn"),

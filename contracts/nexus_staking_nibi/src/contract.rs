@@ -14,15 +14,16 @@
 
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
+use nibiru_std::proto::{nibiru, NibiruStargateMsg};
 use std::string::FromUtf8Error;
 
 use cosmwasm_std::{
-    Delegation,attr, from_binary, to_binary, Addr, Api, Binary, CanonicalAddr, Coin, CosmosMsg, Decimal, Deps, DepsMut, DistributionMsg, Env, MessageInfo, Order, QueryRequest, Response, StakingMsg, StdError, StdResult, Storage, Uint128, WasmMsg, WasmQuery
+    attr, from_binary, to_binary, Addr, Binary, Coin, CosmosMsg, Decimal, Delegation, Deps, DepsMut, DistributionMsg, Env, MessageInfo, Order, QueryRequest, Response, StakingMsg, StdError, StdResult, Storage, Uint128, Validator, WasmMsg, WasmQuery
 };
 
 use crate::config::{self, execute_update_config, execute_update_params};
 use crate::state::{
-    all_unbond_history, get_unbond_requests, query_get_finished_amount, remove_and_accumulate_lock_info, StakerInfo, CONFIG, CURRENT_BATCH, GUARDIANS, LPTOKENS, PARAMETERS, STAKERINFO, STATE
+    all_unbond_history, get_unbond_requests, query_get_finished_amount, StakerInfo, CONFIG, CURRENT_BATCH, GUARDIANS, LPTOKENS, PARAMETERS, STAKERINFO, STATE
 };
 use crate::unbond::{execute_unbond_stnibi, execute_withdraw_unbonded};
 
@@ -33,7 +34,9 @@ use basset::hub::{
 use basset::hub::{Cw20HookMsg, ExecuteMsg};
 use cw20::{Cw20ExecuteMsg, Cw20QueryMsg, Cw20ReceiveMsg, TokenInfoResponse};
 use nexus_rewards_dispatcher::msg::ExecuteMsg::DispatchRewards;
-use crate::restaking::{execute_restake_bond, execute_restake_bond_test};
+// use crate::restaking::{execute_restake_bond, execute_restake_bond_test};
+
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
@@ -44,7 +47,7 @@ pub fn instantiate(
     let sender = info.sender;
 
     // store config
-    let data = Config {creator:sender,reward_dispatcher_contract:None,validators_registry_contract:None,stnibi_token_contract:None, stnibi_reserve:None,total_bonded:Uint128::zero() };
+    let data = Config {creator:sender,reward_dispatcher_contract:None,validators_registry_contract:None,stnibi_token_contract:None, stnibi_reserve:None,total_bonded:Uint128::zero(),stnibi_denom:None};
     CONFIG.save(deps.storage, &data)?;
 
     // store state
@@ -81,9 +84,19 @@ pub fn instantiate(
 pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> StdResult<Response> {
     match msg {
             ExecuteMsg::Receive(msg) => receive_cw20(deps, env, info, msg),
+            ExecuteMsg::CreateDenom { subdenom } => {
+                let cosmos_msg: CosmosMsg = nibiru::tokenfactory::MsgCreateDenom {
+                    sender: env.contract.address.into_string(),
+                    subdenom,
+                }
+                .into_stargate_msg();
+         
+                Ok(Response::new()
+                    // .add_event()
+                    .add_message(cosmos_msg))
+            }
             ExecuteMsg::BondForstnibi {} => execute_bond(deps, env, info, BondType::stnibi),
             ExecuteMsg::BondRewards {} => execute_bond(deps, env, info, BondType::BondRewards),
-            ExecuteMsg::Restake {cwmsg} => receive_cw20_stnibi(deps, env, info,cwmsg),
             ExecuteMsg::DispatchRewards {} => execute_dispatch_rewards(deps, env, info),
             ExecuteMsg::WithdrawUnbonded {} => execute_withdraw_unbonded(deps, env, info),
             ExecuteMsg::CheckSlashing {} => execute_slashing(deps, env),
@@ -95,15 +108,17 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
                 owner,
                 rewards_dispatcher_contract,
                 validators_registry_contract,
-                stnibi_token_contract,
+                // stnibi_token_contract,
+                stnibi_denom
             } => execute_update_config(
                 deps,
                 env,
                 info,
                 owner,
                 rewards_dispatcher_contract,
-                stnibi_token_contract,
+                // stnibi_token_contract,
                 validators_registry_contract,
+                stnibi_denom
             ),
             ExecuteMsg::RedelegateProxy {
                 src_validator,
@@ -121,76 +136,12 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
             ExecuteMsg::WithdrawLiquidity { } => {
                 execute_withdraw_liquidity(deps, env, info)
             },
-            ExecuteMsg::Swap { from_token, to_token, amount } => {
-                todo!()
-            }
+            
+           
     }
 }
 
 
-pub fn receive_cw20_stnibi(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    cw20_msg: Cw20ReceiveMsg,
-) -> StdResult<Response> {
-    match from_binary(&cw20_msg.msg) {
-        Ok(Cw20HookMsg::Restake {}) => bond(
-            deps,
-            env,
-            Addr::unchecked(cw20_msg.sender),
-            info.sender,
-            cw20_msg.amount,
-        ),
-        Ok(Cw20HookMsg::Unbond {  }) => todo!(),
-        Err(_) => Err(StdError::generic_err("invalid cw20 hook message")),
-    }
-}
-
-
-pub fn bond(
-    deps: DepsMut,
-    env: Env,
-    staker_addr: Addr,
-    staking_token: Addr,
-    amount: Uint128,
-) -> StdResult<Response> {
-    // let staker_addr_raw: CanonicalAddr = deps.api.addr_canonicalize(staker_addr.as_str())?;
-    _increase_bond_amount(
-        deps,
-        amount,
-        staker_addr.clone()
-    )?;
-
-    Ok(Response::new().add_attributes([
-        ("action", "bond"),
-        ("staker_addr", staker_addr.as_str()),
-        ("staking_token", staking_token.as_str()),
-        ("amount", &amount.to_string()),
-    ]))
-}
-pub fn _withdraw_lock(
-    storage: &mut dyn Storage,
-    env: &Env,
-    staker_addr: &Addr,
-    staking_token: &Addr,
-) -> StdResult<Response> {
-    // execute 10 lock a time
-    let unlock_amount = remove_and_accumulate_lock_info(
-        storage,
-        staking_token.as_bytes(),
-        staker_addr.as_bytes(),
-        env.block.time,
-    )?;
-
-    if unlock_amount.is_zero() {
-        return Ok(Response::new());
-    }
-
-    let unbond_response = _unbond(staker_addr, staking_token, unlock_amount)?;
-
-    Ok(unbond_response)
-}
 
 fn _unbond(staker_addr: &Addr, staking_token_addr: &Addr, amount: Uint128) -> StdResult<Response> {
     let messages: Vec<CosmosMsg> = vec![WasmMsg::Execute {
@@ -287,20 +238,19 @@ pub fn execute_unpause_contracts(
     Ok(res)
 }
 
-fn _increase_bond_amount(
-    deps:DepsMut,
-    amount: Uint128,
-    staker_addr:Addr
-) -> StdResult<()> {
-    let storage = deps.storage; 
-    let existing_balance = LPTOKENS.may_load(storage, staker_addr.clone().into_string())?;
-    if existing_balance.is_some() {
-        return Err(StdError::generic_err("Cannot stake more than once"));
-    }
-    // Update the user's balance in the map
-    LPTOKENS.save(storage, staker_addr.clone().into_string(), &amount)?;
-    Ok(())
-}
+
+// fn _increase_bond_amount(
+//     deps:DepsMut,
+//     amount: Uint128,
+//     staker_addr:Addr
+// ) -> StdResult<()> {
+//     let storage = deps.storage; 
+//     let existing_balance = LPTOKENS.may_load(storage, staker_addr.clone().into_string())?;
+//     existing_balance.unwrap().checked_add(amount);
+//     // Update the user's balance in the map
+//     LPTOKENS.save(storage, staker_addr.clone().into_string(), &existing_balance)?;
+//     Ok(())
+// }
 
 // withdraw reward to pending reward
 // pub fn before_share_change(pool_index: Decimal, reward_info: &mut RewardInfo) -> StdResult<()> {
@@ -310,7 +260,7 @@ fn _increase_bond_amount(
 //     reward_info.pending_reward += pending_reward;
 //     Ok(())
 // }
-
+    
 pub fn execute_redelegate_proxy(
     deps: DepsMut,
     _env: Env,
@@ -371,7 +321,7 @@ pub fn receive_cw20(
         ));
     };
     // 
-    STAKERINFO.remove(deps.storage, info.sender.into_string().clone());
+    // STAKERINFO.remove(deps.storage, info.sender.into_string().clone());
 
     match from_binary(&cw20_msg.msg)? {
         Cw20HookMsg::Unbond {} => {
@@ -384,6 +334,8 @@ pub fn receive_cw20(
         Cw20HookMsg::Restake {  } => todo!()
     }
 }
+
+
 
 /// Permissionless
 pub fn execute_dispatch_rewards(
@@ -528,11 +480,13 @@ fn query_delegation(deps:Deps,delegator:String) -> StdResult<Vec<Delegation>> {
         
 }
 
+
 fn query_staker(deps:Deps,staker:String) -> StdResult<StakerInfo>{
     let restake = STAKERINFO.may_load(deps.storage, staker.clone()).unwrap();
     
     Ok(restake.unwrap())
 }
+
 fn query_restake(deps:Deps,staker:String) -> StdResult<RestakeResponse> {
     let restake = LPTOKENS.may_load(deps.storage, staker.clone()).unwrap();
     let responce = RestakeResponse{
@@ -653,72 +607,7 @@ pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Respons
     Ok(Response::new())
 }
 
-
-
-// // Deposit liquidity function
-// fn execute_deposit_liquidity(
-//     deps: DepsMut,
-//     env: Env,
-//     info: MessageInfo,
-//     stnibi_amount: Uint128,
-//     nusd_amount: Uint128,
-// ) -> StdResult<Response> {
-//     let mut state = CONFIG.load(deps.storage)?;
-
-//     let stnibi_contract = state.clone().stnibi_token_contract.unwrap().clone().to_string();
-//     // Transfer stNIBI tokens from user to contract
-//     let transfer_stnibi_msg = CosmosMsg::Wasm(WasmMsg::Execute {
-//         contract_addr:stnibi_contract,
-//         msg: to_binary(&Cw20ExecuteMsg::TransferFrom {
-//             owner: info.sender.to_string(),
-//             recipient: env.contract.address.to_string(),
-//             amount: stnibi_amount,
-//         })?,
-//         funds: vec![],
-//     });
-
-//     let nusd_contract =  state.nusd_token_contract.clone().unwrap().clone().into_string();
-//     // Transfer nUSD tokens from user to contract
-//     let transfer_nusd_msg = CosmosMsg::Wasm(WasmMsg::Execute {
-//         contract_addr:nusd_contract,
-//         msg: to_binary(&Cw20ExecuteMsg::TransferFrom {
-//             owner: info.sender.to_string(),
-//             recipient: env.contract.address.to_string(),
-//             amount: nusd_amount,
-//         })?,
-//         funds: vec![],
-//     });
-
-//     // Calculate liquidity tokens to be issued
-//     let lp_tokens;
-//     if state.total_lp_tokens.unwrap().is_zero() {
-//         lp_tokens = stnibi_amount + nusd_amount;
-//     } else {
-//         // let stnibi_ratio = stnibi_amount * state.total_lp_tokens.unwrap() / state.stnibi_reserve.unwrap();
-//         // let nusd_ratio = nusd_amount * state.total_lp_tokens.unwrap() / state.nusd_reserve.unwrap();
-//         lp_tokens = stnibi_ratio.min(nusd_ratio);
-//     }
-
-//     // Update state
-//     state.stnibi_reserve.unwrap().checked_add(stnibi_amount);
-//     // state.nusd_reserve.unwrap().checked_add(nusd_amount) ;
-//     // state.total_lp_tokens.unwrap().checked_add(lp_tokens);
-
-//     let user_lp_balance = LPTOKENS.may_load(deps.storage, info.sender.to_string())?.unwrap_or_default();
-//     LPTOKENS.save(deps.storage, info.sender.to_string(), &(user_lp_balance + lp_tokens))?;
-//     CONFIG.save(deps.storage, &state)?;
-
-//     let res = Response::new()
-//         .add_messages(vec![transfer_stnibi_msg, transfer_nusd_msg])
-//         .add_attribute("action", "deposit_liquidity")
-//         .add_attribute("sender", info.sender)
-//         .add_attribute("stnibi_amount", stnibi_amount)
-//         .add_attribute("nusd_amount", nusd_amount)
-//         .add_attribute("lp_tokens", lp_tokens);
-//     Ok(res)
-// }
-
-
+/// transfer stnibi cw20 version 
 // Withdraw liquidity function
 fn execute_withdraw_liquidity(
     deps: DepsMut,
@@ -731,13 +620,17 @@ fn execute_withdraw_liquidity(
     // if user_lp_balance < lp_tokens {
     //     return Err(StdError::generic_err("Insufficient LP token balance"));
     // }
+    let sender = info.sender.to_string();
+
     let conf = CONFIG.load(deps.storage)?;
     let storage = deps.storage; 
     let staking_token = conf.stnibi_token_contract.unwrap().to_string();
     let amount = conf.total_bonded;
+    let st = STAKERINFO.may_load(storage, sender.clone()).unwrap();
     // Transfer stNIBI tokens from contract to user
     let balance = LPTOKENS.may_load(storage, info.sender.clone().to_string())?.unwrap_or_else(Uint128::zero);
-
+    
+    
     let transfer_stnibi_msg = CosmosMsg::Wasm(WasmMsg::Execute {
         contract_addr:staking_token,
         msg: to_binary(&Cw20ExecuteMsg::Transfer {
@@ -746,107 +639,25 @@ fn execute_withdraw_liquidity(
         })?,
         funds: vec![],
     });
-    // let nusd_contract =  state.clone().nusd_token_contract.clone().unwrap().clone().into_string();
+    // messages.push(transfer_stnibi_msg);
+    LPTOKENS.remove(storage, info.sender.into_string());
+    let new_staker_info = match st {
+        Some(mut d) =>{
+                d.amount_stnibi_balance +=balance;
+                d            
+        },
+        None =>{
+        return Err(StdError::generic_err("Stake is not available"));
+           
+        }
 
-    // // Transfer nUSD tokens from contract to user
-    // let transfer_nusd_msg = CosmosMsg::Wasm(WasmMsg::Execute {
-    //     contract_addr: nusd_contract,
-    //     msg: to_binary(&Cw20ExecuteMsg::Transfer {
-    //         recipient: info.sender.to_string(),
-    //         amount: nusd_amount,
-    //     })?,
-    //     funds: vec![],
-    // });
-
-    // // Update state
-    // state.stnibi_reserve.unwrap().checked_sub(stnibi_amount);
-    // state.nusd_reserve.unwrap().checked_sub(nusd_amount) ;
-    // state.total_lp_tokens.unwrap().checked_sub(lp_tokens);
-    // LPTOKENS.save(deps.storage, info.sender.to_string(), &(user_lp_balance - lp_tokens))?;
-    // CONFIG.save(deps.storage, &state)?;
-
+    };
+    let _= STAKERINFO.save(storage, sender.clone(), &new_staker_info);
     let res = Response::new()
         .add_messages(vec![transfer_stnibi_msg])
+        .add_attribute("from", sender)
         .add_attribute("action", "withdraw_liquidity")
-        .add_attribute("sender", info.sender)
         .add_attribute("stnibi_amount",  amount);
     Ok(res)
 }
 
-// // Swap function
-// fn execute_swap(
-//     deps: DepsMut,
-//     env: Env,
-//     info: MessageInfo,
-//     from_token: String,
-//     to_token: String,
-//     amount: Uint128,
-// ) -> StdResult<Response> {
-//     let mut state = CONFIG.load(deps.storage)?;
-
-//     let (input_reserve, output_reserve, from_token_addr, to_token_addr) = if from_token == "stNIBI" && to_token == "nUSD" {
-//         (
-//             state.stnibi_reserve,
-//             state.nusd_reserve,
-//             state.stnibi_token_contract.clone(),
-//             state.nusd_token_contract.clone(),
-//         )
-//     } else if from_token == "nUSD" && to_token == "stNIBI" {
-//         (
-//             state.nusd_reserve,
-//             state.stnibi_reserve,
-//             state.nusd_token_contract.clone(),
-//             state.stnibi_token_contract.clone(),
-//         )
-//     } else {
-//         return Err(StdError::generic_err("Invalid token pair"));
-//     };
-
-//     // Calculate output amount with 0.3% fee
-//     let amount_with_fee = amount * Uint128::from(997u128);
-//     let numerator = amount_with_fee * output_reserve.unwrap();
-//     let denominator = input_reserve.unwrap() * Uint128::from(1000u128) + amount_with_fee;
-//     let output_amount = numerator / denominator;
-
-//     // Transfer input tokens from user to contract
-//     let transfer_in_msg = CosmosMsg::Wasm(WasmMsg::Execute {
-//         contract_addr: from_token_addr.unwrap().into_string(),
-//         msg: to_binary(&Cw20ExecuteMsg::TransferFrom {
-//             owner: info.sender.to_string(),
-//             recipient: env.contract.address.to_string(),
-//             amount,
-//         })?,
-//         funds: vec![],
-//     });
-
-//     // Transfer output tokens from contract to user
-//     let transfer_out_msg = CosmosMsg::Wasm(WasmMsg::Execute {
-//         contract_addr: to_token_addr.unwrap().into_string(),
-//         msg: to_binary(&Cw20ExecuteMsg::Transfer {
-//             recipient: info.sender.to_string(),
-//             amount: output_amount,
-//         })?,
-//         funds: vec![],
-//     });
-
-//     // Update state
-//     if from_token == "stNIBI" {
-//         state.stnibi_reserve.unwrap().checked_add(amount);
-//         state.nusd_reserve.unwrap().checked_sub(output_amount);
-//     } else {
-//         state.nusd_reserve.unwrap().checked_add(amount) ;
-//         state.nusd_reserve.unwrap().checked_sub(output_amount);
-
-//     }
-//     CONFIG.save(deps.storage, &state)?;
-
-//     let res = Response::new()
-//         .add_messages(vec![transfer_in_msg, transfer_out_msg])
-//         .add_attribute("action", "swap")
-//         .add_attribute("sender", info.sender)
-//         .add_attribute("from_token", from_token)
-//         .add_attribute("to_token", to_token)
-//         .add_attribute("input_amount", amount)
-//         .add_attribute("output_amount", output_amount);
-//     Ok(res)
-// }

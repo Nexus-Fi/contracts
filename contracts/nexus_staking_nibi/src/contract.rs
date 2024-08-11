@@ -143,9 +143,6 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
 
 
 
-
-
-
 fn _unbond(staker_addr: &Addr, staking_token_addr: &Addr, amount: Uint128) -> StdResult<Response> {
     let messages: Vec<CosmosMsg> = vec![WasmMsg::Execute {
         contract_addr: staking_token_addr.to_string(),

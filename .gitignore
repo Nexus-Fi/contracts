@@ -33,3 +33,10 @@ lcov.info
 
 .DS_Store
 artifacts/*.json
+
+# testnet material 
+Testnet/
+Mainnet/
+DeployScripts/
+artifacts/
+artifacts copy/

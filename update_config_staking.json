@@ -1,8 +1,0 @@
-{
-    "update_config":{
-        "owner":"nibi1hzty850q3vnew33yuft82j0v5fazyvfcescxhs",
-        "rewards_dispatcher_contract":"nibi12y04ajv9fmh2n64mhtrltf8yzpqkl2a4djg8du24np5xklw5kvcq6dtsmj",
-        "validators_registry_contract":"nibi17gxmfpc6l6s79dvghs5pxgruh3spxetx0td70qwq5jkd8sa5zx7sxvjwls",
-        "stnibi_denom":"tf/nibi1u7axsez8dekcp3r4dnjdn0tcu6d06n3dyunun7365vps7y8u4xxsgsc9y4/stakedNibi"
-    }
-}

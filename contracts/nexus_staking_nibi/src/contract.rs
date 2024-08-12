@@ -21,7 +21,7 @@ use cosmwasm_std::{
     attr, from_binary, to_binary, Addr, Binary, Coin, CosmosMsg, Decimal, Delegation, Deps, DepsMut, DistributionMsg, Env, MessageInfo, Order, QueryRequest, Response, StakingMsg, StdError, StdResult, Storage, Uint128, Validator, WasmMsg, WasmQuery
 };
 
-use crate::config::{self, execute_update_config, execute_update_params};
+use crate::config::{ execute_update_config, execute_update_params};
 use crate::state::{
     all_unbond_history, get_unbond_requests, query_get_finished_amount, StakerInfo, CONFIG, CURRENT_BATCH, GUARDIANS, LPTOKENS, PARAMETERS, STAKERINFO, STATE
 };
@@ -34,8 +34,6 @@ use basset::hub::{
 use basset::hub::{Cw20HookMsg, ExecuteMsg};
 use cw20::{Cw20ExecuteMsg, Cw20QueryMsg, Cw20ReceiveMsg, TokenInfoResponse};
 use nexus_rewards_dispatcher::msg::ExecuteMsg::DispatchRewards;
-// use crate::restaking::{execute_restake_bond, execute_restake_bond_test};
-
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -130,12 +128,7 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
             ExecuteMsg::RemoveGuardians { addresses } => {
                 execute_remove_guardians(deps, env, info, addresses)
             },
-            ExecuteMsg::DepositLiquidity { stnibi_amount, nusd_amount } => {
-                todo!()
-            },
-            ExecuteMsg::WithdrawLiquidity { } => {
-                execute_withdraw_liquidity(deps, env, info)
-            },
+           
             
            
     }
@@ -605,59 +598,5 @@ fn query_unbond_requests_limitation(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
     Ok(Response::new())
-}
-
-/// transfer stnibi cw20 version 
-// Withdraw liquidity function
-fn execute_withdraw_liquidity(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-) -> StdResult<Response> {
-
-    // // Get user's LP token balance
-    // let user_lp_balance = LPTOKENS.may_load(deps.storage, info.sender.to_string())?.unwrap_or_default();
-    // if user_lp_balance < lp_tokens {
-    //     return Err(StdError::generic_err("Insufficient LP token balance"));
-    // }
-    let sender = info.sender.to_string();
-
-    let conf = CONFIG.load(deps.storage)?;
-    let storage = deps.storage; 
-    let staking_token = conf.stnibi_token_contract.unwrap().to_string();
-    let amount = conf.total_bonded;
-    let st = STAKERINFO.may_load(storage, sender.clone()).unwrap();
-    // Transfer stNIBI tokens from contract to user
-    let balance = LPTOKENS.may_load(storage, info.sender.clone().to_string())?.unwrap_or_else(Uint128::zero);
-    
-    
-    let transfer_stnibi_msg = CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr:staking_token,
-        msg: to_binary(&Cw20ExecuteMsg::Transfer {
-            recipient: info.sender.to_string(),
-            amount: balance,
-        })?,
-        funds: vec![],
-    });
-    // messages.push(transfer_stnibi_msg);
-    LPTOKENS.remove(storage, info.sender.into_string());
-    let new_staker_info = match st {
-        Some(mut d) =>{
-                d.amount_stnibi_balance +=balance;
-                d            
-        },
-        None =>{
-        return Err(StdError::generic_err("Stake is not available"));
-           
-        }
-
-    };
-    let _= STAKERINFO.save(storage, sender.clone(), &new_staker_info);
-    let res = Response::new()
-        .add_messages(vec![transfer_stnibi_msg])
-        .add_attribute("from", sender)
-        .add_attribute("action", "withdraw_liquidity")
-        .add_attribute("stnibi_amount",  amount);
-    Ok(res)
 }
 

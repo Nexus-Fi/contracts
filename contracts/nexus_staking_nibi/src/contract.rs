@@ -90,7 +90,6 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
                 .into_stargate_msg();
          
                 Ok(Response::new()
-                    // .add_event()
                     .add_message(cosmos_msg))
             }
             ExecuteMsg::BondForstnibi {} => execute_bond(deps, env, info, BondType::stnibi),
@@ -106,7 +105,6 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
                 owner,
                 rewards_dispatcher_contract,
                 validators_registry_contract,
-                // stnibi_token_contract,
                 stnibi_denom
             } => execute_update_config(
                 deps,
@@ -114,7 +112,6 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
                 info,
                 owner,
                 rewards_dispatcher_contract,
-                // stnibi_token_contract,
                 validators_registry_contract,
                 stnibi_denom
             ),
@@ -136,24 +133,6 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
 
 
 
-fn _unbond(staker_addr: &Addr, staking_token_addr: &Addr, amount: Uint128) -> StdResult<Response> {
-    let messages: Vec<CosmosMsg> = vec![WasmMsg::Execute {
-        contract_addr: staking_token_addr.to_string(),
-        msg: to_binary(&Cw20ExecuteMsg::Transfer {
-            recipient: staker_addr.to_string(),
-            amount,
-        })?,
-        funds: vec![],
-    }
-    .into()];
-
-    Ok(Response::new().add_messages(messages).add_attributes([
-        attr("action", "unbond"),
-        attr("staker_addr", staker_addr.as_str()),
-        attr("amount", amount.to_string()),
-        attr("staking_token", staking_token_addr.as_str()),
-    ]))
-}
 
 
 
@@ -232,27 +211,6 @@ pub fn execute_unpause_contracts(
 }
 
 
-// fn _increase_bond_amount(
-//     deps:DepsMut,
-//     amount: Uint128,
-//     staker_addr:Addr
-// ) -> StdResult<()> {
-//     let storage = deps.storage; 
-//     let existing_balance = LPTOKENS.may_load(storage, staker_addr.clone().into_string())?;
-//     existing_balance.unwrap().checked_add(amount);
-//     // Update the user's balance in the map
-//     LPTOKENS.save(storage, staker_addr.clone().into_string(), &existing_balance)?;
-//     Ok(())
-// }
-
-// withdraw reward to pending reward
-// pub fn before_share_change(pool_index: Decimal, reward_info: &mut RewardInfo) -> StdResult<()> {
-//     let pending_reward = (reward_info.bond_amount * pool_index)
-//         .checked_sub(reward_info.bond_amount * reward_info.index)?;
-//     reward_info.index = pool_index;
-//     reward_info.pending_reward += pending_reward;
-//     Ok(())
-// }
     
 pub fn execute_redelegate_proxy(
     deps: DepsMut,

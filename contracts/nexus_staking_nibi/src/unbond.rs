@@ -14,7 +14,7 @@
 
 use crate::contract::slashing;
 use crate::state::{
-    get_finished_amount, read_unbond_history, remove_unbond_wait_list, store_unbond_history, store_unbond_wait_list, CONFIG, CURRENT_BATCH, PARAMETERS, STAKERINFO, STATE
+    get_finished_amount, read_unbond_history, remove_unbond_wait_list, store_unbond_history, store_unbond_wait_list, CONFIG, CURRENT_BATCH, PARAMETERS, STAKERINFO, STATE, TOKEN_SUPPLY
 };
 use basset::hub::{CurrentBatch, State, UnbondHistory};
 use cosmwasm_std::{
@@ -355,10 +355,6 @@ pub(crate) fn execute_unbond_stnibi(
 
     // Send Burn message to token contract
     let config = CONFIG.load(deps.storage)?;
-    let token_address = config
-        .stnibi_token_contract
-        .ok_or_else(|| StdError::generic_err("the token contract must have been registered"))?;
-    let config = CONFIG.load(deps.storage)?;
     let coin_denom  =config.stnibi_denom.unwrap() ;
     let contract_address = env.clone().contract.address.into_string();
         let cosmos_msg: CosmosMsg = nibiru_std::proto::nibiru::tokenfactory::MsgBurn {
@@ -380,12 +376,36 @@ pub(crate) fn execute_unbond_stnibi(
     //     msg: to_binary(&cosmos_msg)?,
     //     funds: vec![],
     // }));
+    let denom_parts: Vec<&str> = coin_denom.split('/').collect();
+    if denom_parts.len() != 3 {
+        return Err(StdError::GenericErr {
+            msg: "invalid denom input".to_string(),
+        }
+        .into());
+    }
+    let subdenom = denom_parts[2];
+    let supply_key = subdenom;
+    let token_supply =
+    TOKEN_SUPPLY.may_load(deps.storage, supply_key)?;
+    match token_supply {
+        Some(supply) => {
+            let new_supply = supply - amount; 
+            TOKEN_SUPPLY.save(deps.storage, supply_key, &new_supply)
+        }?,
+        None => {
+            return Err(StdError::generic_err(
+                "Zero stNIBI in circulation supply",
+            ));
+    }
+    }
+
     messages.push(cosmos_msg);
     let staker_info = STAKERINFO.may_load(deps.storage,sender.clone()).unwrap();
 
     let new_staker_info = match staker_info {
         Some(mut d) =>{
                 d.amount_stnibi_balance -= amount;
+                d.amount_staked_unibi -= amount; 
                 d            
         },
         None =>{

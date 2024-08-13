@@ -79,7 +79,7 @@ pub fn execute_bond(
     };
 
     // total supply should be updated for exchange rate calculation.
-    total_supply += mint_amount;
+    
 
     
 
@@ -124,7 +124,7 @@ pub fn execute_bond(
             ]);
         return Ok(res);
     }
-    let contract_addr: String = env.clone().contract.address.into();
+    let contract_addr: String = env.contract.address.into();
     let config = CONFIG.load(deps.storage)?;
     let coin_denom  =config.stnibi_denom.unwrap() ;
     let cosmos_msg: CosmosMsg = nibiru::tokenfactory::MsgMint {
@@ -157,13 +157,17 @@ pub fn execute_bond(
     match token_supply {
         Some(supply) => {
             let new_supply = supply + Uint128::from(mint_amount);
+            total_supply += mint_amount;
             TOKEN_SUPPLY.save(deps.storage, supply_key, &new_supply)
         }?,
-        None => TOKEN_SUPPLY.save(
+        None => {
+            total_supply = mint_amount; 
+            TOKEN_SUPPLY.save(
             deps.storage,
             supply_key,
             &Uint128::from(mint_amount),
-        )?,
+        )?
+    }
     }
     let token_supply_ =
     TOKEN_SUPPLY.may_load(deps.storage, supply_key)?;
@@ -203,7 +207,6 @@ pub fn execute_bond(
                 amount_staked_unibi: payment.amount,
                 amount_stnibi_balance: mint_amount,
                 bonding_time: time.into(),
-                epoch_period: epoch_period.into(),
                 validator_list: validators,
             }
         }

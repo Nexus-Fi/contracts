@@ -50,7 +50,6 @@ pub struct StakerInfo {
     pub amount_staked_unibi: Uint128,
     pub amount_stnibi_balance: Uint128,
     pub bonding_time:Uint128,
-    pub epoch_period:Uint128,
     pub validator_list:Vec<ValidatorResponse>
 }
 

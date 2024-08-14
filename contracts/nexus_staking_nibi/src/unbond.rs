@@ -18,15 +18,13 @@ use crate::state::{
 };
 use basset::hub::{CurrentBatch, State, UnbondHistory};
 use cosmwasm_std::{
-    attr, coin, coins, to_binary, BankMsg, CosmosMsg, Decimal, DepsMut, Env, MessageInfo, Response,
-    StakingMsg, StdError, StdResult, Storage, Uint128, WasmMsg,Decimal256, Uint256
+    attr, coin, coins, BankMsg, CosmosMsg, Decimal, DepsMut, Env, MessageInfo, Response,
+    StakingMsg, StdError, StdResult, Storage, Uint128,Decimal256, Uint256
 };
 
-use cw20::Cw20ExecuteMsg;
 use nexus_validator_registary::common::calculate_undelegations;
 use nexus_validator_registary::registry::ValidatorResponse;
 use nibiru_std::proto::cosmos::base;
-use nibiru_std::proto::cosmos::tx::config;
 use nibiru_std::proto::NibiruStargateMsg;
 use signed_integers::SignedInt;
 
@@ -39,6 +37,7 @@ pub fn execute_withdraw_unbonded(
     if params.paused.unwrap_or(false) {
         return Err(StdError::generic_err("The contract is temporarily paused"));
     }
+   
     let sender_human = info.sender;
     let contract_address = env.contract.address.clone();
     let unbonding_period = params.unbonding_period;
@@ -75,13 +74,6 @@ pub fn execute_withdraw_unbonded(
         Ok(last_state)
     })?;
 
-    // Send the money to the user
-    let msgs: Vec<CosmosMsg> = vec![BankMsg::Send {
-        to_address: sender_human.to_string(),
-        amount: coins(withdraw_amount.u128(), &*coin_denom),
-    }
-    .into()];
-
     let staker_info = STAKERINFO.may_load(deps.storage, sender_human.clone().into_string())?;
     let new_staker_info = match staker_info {
         Some(mut d) =>{
@@ -96,6 +88,15 @@ pub fn execute_withdraw_unbonded(
         }
 
     };
+
+    // Send the money to the user
+    let msgs: Vec<CosmosMsg> = vec![BankMsg::Send {
+        to_address: sender_human.to_string(),
+        amount: coins(withdraw_amount.u128(), &*coin_denom),
+    }
+    .into()];
+
+   
     let _  = STAKERINFO.save(deps.storage, sender_human.to_string(),&new_staker_info );
 
     let res = Response::new().add_messages(msgs).add_attributes(vec![
@@ -356,7 +357,7 @@ pub(crate) fn execute_unbond_stnibi(
     // Send Burn message to token contract
     let config = CONFIG.load(deps.storage)?;
     let coin_denom  =config.stnibi_denom.unwrap() ;
-    let contract_address = env.clone().contract.address.into_string();
+    let contract_address = env.contract.address.into_string();
         let cosmos_msg: CosmosMsg = nibiru_std::proto::nibiru::tokenfactory::MsgBurn {
             sender: contract_address.clone(),
             // TODO cosmwasm-std Coin should implement into()
@@ -366,7 +367,7 @@ pub(crate) fn execute_unbond_stnibi(
                 denom: coin_denom.clone(),
                 amount: amount.to_string(),
             }),
-            burn_from:contract_address,
+            burn_from:sender.clone(),
         }
         .into_stargate_msg();
         

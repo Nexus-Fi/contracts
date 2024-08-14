@@ -78,11 +78,7 @@ pub fn execute_bond(
         
     };
 
-    // total supply should be updated for exchange rate calculation.
     
-
-    
-
     let validators_registry_contract = if let Some(v) = config.validators_registry_contract {
         v
     } else {
@@ -169,14 +165,12 @@ pub fn execute_bond(
         )?
     }
     }
-    let token_supply_ =
-    TOKEN_SUPPLY.may_load(deps.storage, supply_key)?;
     // exchange rate should be updated for future
     STATE.update(deps.storage, |mut prev_state| -> StdResult<_> {
         match bond_type {
             BondType::BondRewards => {
                 prev_state.total_bond_stnibi_amount += payment.amount;
-                prev_state.update_stnibi_exchange_rate(token_supply_.unwrap().into(), requested_with_fee);
+                prev_state.update_stnibi_exchange_rate(token_supply.unwrap().into(), requested_with_fee);
                 Ok(prev_state)
             }
             BondType::stnibi => {
@@ -207,6 +201,7 @@ pub fn execute_bond(
                 amount_staked_unibi: payment.amount,
                 amount_stnibi_balance: mint_amount,
                 bonding_time: time.into(),
+                unbonding_period:None,
                 validator_list: validators,
             }
         }

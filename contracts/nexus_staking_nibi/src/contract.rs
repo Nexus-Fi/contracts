@@ -125,9 +125,6 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
             ExecuteMsg::RemoveGuardians { addresses } => {
                 execute_remove_guardians(deps, env, info, addresses)
             },
-           
-            
-           
     }
 }
 
@@ -264,26 +261,26 @@ pub fn receive_cw20(
     // only token contract can execute this message
     let conf = CONFIG.load(deps.storage)?;
 
-    let stnibi_contract_addr = if let Some(st) = conf.stnibi_token_contract {
-        st
-    } else {
-        return Err(StdError::generic_err(
-            "the stnibi token contract must have been registered",
-        ));
-    };
+    // let stnibi_contract_addr = if let Some(st) = conf.stnibi_token_contract {
+    //     st
+    // } else {
+    //     return Err(StdError::generic_err(
+    //         "the stnibi token contract must have been registered",
+    //     ));
+    // };
     // 
     // STAKERINFO.remove(deps.storage, info.sender.into_string().clone());
+    execute_unbond_stnibi(deps, env, cw20_msg.amount, cw20_msg.sender)
 
-    match from_binary(&cw20_msg.msg)? {
-        Cw20HookMsg::Unbond {} => {
-            if contract_addr == stnibi_contract_addr {
-                execute_unbond_stnibi(deps, env, cw20_msg.amount, cw20_msg.sender)
-            } else {
-                Err(StdError::generic_err("unauthorized"))
-            }
-        },
-        Cw20HookMsg::Restake {  } => todo!()
-    }
+    // match from_binary(&cw20_msg.msg)? {
+    //     Cw20HookMsg::Unbond {} => {
+    //         if contract_addr == stnibi_contract_addr {
+    //         } else {
+    //             Err(StdError::generic_err("unauthorized"))
+    //         }
+    //     },
+    //     Cw20HookMsg::Restake {  } => todo!()
+    // }
 }
 
 
@@ -509,17 +506,21 @@ fn query_params(deps: Deps) -> StdResult<Parameters> {
 }
 
 pub(crate) fn query_total_stnibi_issued(deps: Deps) -> StdResult<Uint128> {
-    let token_address = CONFIG
-        .load(deps.storage)?
-        .stnibi_token_contract
-        .ok_or_else(|| StdError::generic_err("token contract must have been registered"))?;
-    let token_info: TokenInfoResponse =
-        deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
-            contract_addr: token_address.to_string(),
-            msg: to_binary(&Cw20QueryMsg::TokenInfo {})?,
-        }))?;
-    Ok(token_info.total_supply)
+    // let token_address = CONFIG
+    //     .load(deps.storage)?
+    //     .stnibi_token_contract
+    //     .ok_or_else(|| StdError::generic_err("token contract must have been registered"))?;
+    // let token_info: TokenInfoResponse =
+    //     deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
+    //         contract_addr: token_address.to_string(),
+    //         msg: to_binary(&Cw20QueryMsg::TokenInfo {})?,
+    //     }))?;
+    let mut state = STATE.load(deps.storage)?;
+        let total_issued = state.total_stnibi_issued; 
+    Ok(total_issued)
 }
+
+
 
 fn query_unbond_requests(deps: Deps, address: String) -> StdResult<UnbondRequestsResponse> {
     let requests = get_unbond_requests(deps.storage, address.clone())?;

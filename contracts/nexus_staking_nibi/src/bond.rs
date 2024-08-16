@@ -17,7 +17,7 @@ use crate::math::decimal_division;
 use crate::state::{StakerInfo, CONFIG, CURRENT_BATCH, PARAMETERS, STAKERINFO, STATE, TOKEN_SUPPLY};
 use basset::hub::{BondType, Parameters};
 use cosmwasm_std::{
-    attr, to_binary, Coin, CosmosMsg, DepsMut, Env, MessageInfo, QueryRequest, Response, StakingMsg, StdError, StdResult, Uint128, Uint256, WasmMsg, WasmQuery
+    attr, coin, to_binary, Coin, CosmosMsg, DepsMut, Env, MessageInfo, QueryRequest, Response, StakingMsg, StdError, StdResult, Uint128, Uint256, WasmMsg, WasmQuery
 };
 use nexus_validator_registary::common::calculate_delegations;
 use nexus_validator_registary::msg::QueryMsg as QueryValidators;
@@ -122,13 +122,24 @@ pub fn execute_bond(
     }
     let contract_addr: String = env.contract.address.into();
     let config = CONFIG.load(deps.storage)?;
-    let coin_denom  =config.stnibi_denom.unwrap() ;
+    let coin_denom  =config.stnibi_denom;
+    let coin_denom_ = match coin_denom {
+        Some(denom ) =>{
+         denom
+        },
+        None => {
+            return Err(StdError::GenericErr {
+                msg: "Denom is not created".to_string(),
+            }
+            .into());
+        }
+    };
     let cosmos_msg: CosmosMsg = nibiru::tokenfactory::MsgMint {
         sender: contract_addr,
         // TODO feat: cosmwasm-std Coin should implement into()
         // base::v1beta1::Coin.
         coin: Some(cosmos::base::v1beta1::Coin {
-            denom: coin_denom.to_string(),
+            denom: coin_denom_.to_string(),
             amount: mint_amount.to_string(),
         }),
         mint_to:sender.to_string(),
@@ -139,7 +150,8 @@ pub fn execute_bond(
     //     recipient: sender.to_string(),
     //     amount: mint_amount,
     // };
-    let denom_parts: Vec<&str> = coin_denom.split('/').collect();
+    
+    let denom_parts: Vec<&str> = coin_denom_.split('/').collect();
     if denom_parts.len() != 3 {
         return Err(StdError::GenericErr {
             msg: "invalid denom input".to_string(),

@@ -83,12 +83,25 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
     match msg {
             ExecuteMsg::Receive(msg) => receive_cw20(deps, env, info, msg),
             ExecuteMsg::CreateDenom { subdenom } => {
+                let config = CONFIG.load(deps.storage)?;
+                let coin_denom  =config.stnibi_denom ;
+                match coin_denom {
+                    Some(_) =>{
+                        return Err(StdError::GenericErr {
+                            msg: "Denom Already Created".to_string(),
+                        }
+                        .into());
+                    },
+                    None =>{
+
+                    }
+                };
                 let cosmos_msg: CosmosMsg = nibiru::tokenfactory::MsgCreateDenom {
+                    
                     sender: env.contract.address.into_string(),
                     subdenom,
                 }
                 .into_stargate_msg();
-         
                 Ok(Response::new()
                     .add_message(cosmos_msg))
             }
@@ -269,18 +282,13 @@ pub fn receive_cw20(
     //     ));
     // };
     // 
-    // STAKERINFO.remove(deps.storage, info.sender.into_string().clone());
-    execute_unbond_stnibi(deps, env, cw20_msg.amount, cw20_msg.sender)
 
-    // match from_binary(&cw20_msg.msg)? {
-    //     Cw20HookMsg::Unbond {} => {
-    //         if contract_addr == stnibi_contract_addr {
-    //         } else {
-    //             Err(StdError::generic_err("unauthorized"))
-    //         }
-    //     },
-    //     Cw20HookMsg::Restake {  } => todo!()
-    // }
+    match from_binary(&cw20_msg.msg)? {
+        Cw20HookMsg::Unbond {} => {
+        execute_unbond_stnibi(deps, env, cw20_msg.amount, cw20_msg.sender)
+        },
+        Cw20HookMsg::Restake {  } => todo!()
+    }
 }
 
 

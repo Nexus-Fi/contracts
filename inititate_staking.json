@@ -1,5 +1,5 @@
 {
-    "epoch_period":0,
+    "epoch_period":86400,
     "underlying_coin_denom":"unibi",
     "unbonding_period":0
 }

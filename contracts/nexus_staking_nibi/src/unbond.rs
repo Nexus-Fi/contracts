@@ -202,7 +202,6 @@ fn calculate_new_withdraw_rate(
 }
 
 
-
 /// This is designed for an accurate unbonded amount calculation.
 /// Execute while processing withdraw_unbonded
 fn process_withdraw_rate(
@@ -218,7 +217,9 @@ fn process_withdraw_rate(
         calculate_newly_added_unbonded_amount(deps.storage, last_processed_batch, historical_time);
 
     if batch_count < 1 {
-        return Ok(());
+        return Err(StdError::generic_err("NO BATCHES AVAILABLE"));
+
+        // return Ok(());
     }
 
     let balance_change = SignedInt::from_subtraction(hub_balance, state.prev_hub_balance);
@@ -401,23 +402,23 @@ pub(crate) fn execute_unbond_stnibi(
     }
 
     messages.push(cosmos_msg);
-    let staker_info = STAKERINFO.may_load(deps.storage,sender.clone()).unwrap();
+    // let staker_info = STAKERINFO.may_load(deps.storage,sender.clone()).unwrap();
 
-    let new_staker_info = match staker_info {
-        Some(mut d) =>{
-                d.amount_stnibi_balance -= amount;
-                d.amount_staked_unibi -= amount; 
-                d            
-        },
-        None =>{
-            return Err(StdError::generic_err(
-                "NIBI not staked",
-            ));
-        }
+    // let new_staker_info = match staker_info {
+    //     Some(mut d) =>{
+    //             d.amount_stnibi_balance -= amount;
+    //             d.amount_staked_unibi -= amount; 
+    //             d            
+    //     },
+    //     None =>{
+    //         return Err(StdError::generic_err(
+    //             "NIBI not staked",
+    //         ));
+    //     }
 
-     };
+    //  };
 
-    let _  = STAKERINFO.save(deps.storage, sender.clone(),&new_staker_info );
+    // let _  = STAKERINFO.save(deps.storage, sender.clone(),&new_staker_info );
 
     let res = Response::new().add_messages(messages).add_attributes(vec![
         attr("action", "burn"),

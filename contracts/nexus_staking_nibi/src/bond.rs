@@ -108,7 +108,7 @@ pub fn execute_bond(
             amount: Coin::new(delegations[i].u128(), payment.denom.as_str()),
         }));
     }
-
+    
     // we don't need to mint stnibi when bonding rewards
     if bond_type == BondType::BondRewards {
         let res = Response::new()

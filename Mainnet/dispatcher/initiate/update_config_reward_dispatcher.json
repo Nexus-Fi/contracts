@@ -1,9 +1,0 @@
-{
-    "update_config":{
-        "owner":null,
-        "hub_contract":"nibi1l0e60uch82q4sr04x4azrztkl5m6lkgqqmnd0r0xprlude6r8ucsc6mfnr",
-        "stnibi_reward_denom":null,
-        "nexus_fee_address":null,
-        "nexus_fee_rate":null
-    }
-}

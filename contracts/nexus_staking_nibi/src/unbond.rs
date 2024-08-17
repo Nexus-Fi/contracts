@@ -103,6 +103,8 @@ pub fn execute_withdraw_unbonded(
         attr("action", "finish_burn"),
         attr("from", contract_address),
         attr("amount", withdraw_amount),
+        attr("amount_withdrawn", withdraw_amount.to_string()),
+        attr("updated_hub_balance", prev_balance.to_string()),
     ]);
     Ok(res)
 }
@@ -217,9 +219,9 @@ fn process_withdraw_rate(
         calculate_newly_added_unbonded_amount(deps.storage, last_processed_batch, historical_time);
 
     if batch_count < 1 {
-        return Err(StdError::generic_err("NO BATCHES AVAILABLE"));
+        // return Err(StdError::generic_err("NO BATCHES AVAILABLE"));
 
-        // return Ok(());
+        return Ok(());
     }
 
     let balance_change = SignedInt::from_subtraction(hub_balance, state.prev_hub_balance);

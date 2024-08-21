@@ -137,7 +137,7 @@ pub fn execute_dispatch_rewards(deps: DepsMut, env: Env, info: MessageInfo) -> S
     if info.sender != hub_addr {
         return Err(StdError::generic_err("unauthorized"));
     }
-
+    
     let contr_addr = env.contract.address;
     let mut stnibi_rewards = deps
         .querier

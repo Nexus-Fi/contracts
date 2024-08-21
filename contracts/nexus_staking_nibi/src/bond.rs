@@ -17,7 +17,7 @@ use crate::math::decimal_division;
 use crate::state::{StakerInfo, CONFIG, CURRENT_BATCH, PARAMETERS, STAKERINFO, STATE, TOKEN_SUPPLY};
 use basset::hub::{BondType, Parameters};
 use cosmwasm_std::{
-    attr, to_binary, Coin, CosmosMsg, DepsMut, Env, MessageInfo, QueryRequest, Response, StakingMsg, StdError, StdResult, Uint128, Uint256, WasmMsg, WasmQuery
+    attr, coin, to_binary, Coin, CosmosMsg, DepsMut, Env, MessageInfo, QueryRequest, Response, StakingMsg, StdError, StdResult, Uint128, Uint256, WasmMsg, WasmQuery
 };
 use nexus_validator_registary::common::calculate_delegations;
 use nexus_validator_registary::msg::QueryMsg as QueryValidators;
@@ -78,11 +78,7 @@ pub fn execute_bond(
         
     };
 
-    // total supply should be updated for exchange rate calculation.
-    total_supply += mint_amount;
-
     
-
     let validators_registry_contract = if let Some(v) = config.validators_registry_contract {
         v
     } else {
@@ -112,7 +108,7 @@ pub fn execute_bond(
             amount: Coin::new(delegations[i].u128(), payment.denom.as_str()),
         }));
     }
-
+    
     // we don't need to mint stnibi when bonding rewards
     if bond_type == BondType::BondRewards {
         let res = Response::new()
@@ -124,15 +120,26 @@ pub fn execute_bond(
             ]);
         return Ok(res);
     }
-    let contract_addr: String = env.clone().contract.address.into();
+    let contract_addr: String = env.contract.address.into();
     let config = CONFIG.load(deps.storage)?;
-    let coin_denom  =config.stnibi_denom.unwrap() ;
+    let coin_denom  =config.stnibi_denom;
+    let coin_denom_ = match coin_denom {
+        Some(denom ) =>{
+         denom
+        },
+        None => {
+            return Err(StdError::GenericErr {
+                msg: "Denom is not created".to_string(),
+            }
+            .into());
+        }
+    };
     let cosmos_msg: CosmosMsg = nibiru::tokenfactory::MsgMint {
         sender: contract_addr,
         // TODO feat: cosmwasm-std Coin should implement into()
         // base::v1beta1::Coin.
         coin: Some(cosmos::base::v1beta1::Coin {
-            denom: coin_denom.to_string(),
+            denom: coin_denom_.to_string(),
             amount: mint_amount.to_string(),
         }),
         mint_to:sender.to_string(),
@@ -143,7 +150,8 @@ pub fn execute_bond(
     //     recipient: sender.to_string(),
     //     amount: mint_amount,
     // };
-    let denom_parts: Vec<&str> = coin_denom.split('/').collect();
+    
+    let denom_parts: Vec<&str> = coin_denom_.split('/').collect();
     if denom_parts.len() != 3 {
         return Err(StdError::GenericErr {
             msg: "invalid denom input".to_string(),
@@ -157,22 +165,24 @@ pub fn execute_bond(
     match token_supply {
         Some(supply) => {
             let new_supply = supply + Uint128::from(mint_amount);
+            total_supply += mint_amount;
             TOKEN_SUPPLY.save(deps.storage, supply_key, &new_supply)
         }?,
-        None => TOKEN_SUPPLY.save(
+        None => {
+            total_supply = mint_amount; 
+            TOKEN_SUPPLY.save(
             deps.storage,
             supply_key,
             &Uint128::from(mint_amount),
-        )?,
+        )?
     }
-    let token_supply_ =
-    TOKEN_SUPPLY.may_load(deps.storage, supply_key)?;
+    }
     // exchange rate should be updated for future
     STATE.update(deps.storage, |mut prev_state| -> StdResult<_> {
         match bond_type {
             BondType::BondRewards => {
                 prev_state.total_bond_stnibi_amount += payment.amount;
-                prev_state.update_stnibi_exchange_rate(token_supply_.unwrap().into(), requested_with_fee);
+                prev_state.update_stnibi_exchange_rate(token_supply.unwrap().into(), requested_with_fee);
                 Ok(prev_state)
             }
             BondType::stnibi => {
@@ -203,7 +213,7 @@ pub fn execute_bond(
                 amount_staked_unibi: payment.amount,
                 amount_stnibi_balance: mint_amount,
                 bonding_time: time.into(),
-                epoch_period: epoch_period.into(),
+                unbonding_period:None,
                 validator_list: validators,
             }
         }

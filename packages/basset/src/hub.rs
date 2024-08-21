@@ -134,10 +134,6 @@ pub enum ExecuteMsg {
     RemoveGuardians {
         addresses: Vec<String>,
     },
-    DepositLiquidity { stnibi_amount:Uint128, nusd_amount:Uint128 },
-    /// withdraw stnibi
-    WithdrawLiquidity {  },
-   
     ///create the token denom
     CreateDenom { subdenom:String },
 }

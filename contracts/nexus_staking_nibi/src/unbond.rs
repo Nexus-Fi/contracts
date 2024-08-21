@@ -14,19 +14,17 @@
 
 use crate::contract::slashing;
 use crate::state::{
-    get_finished_amount, read_unbond_history, remove_unbond_wait_list, store_unbond_history, store_unbond_wait_list, CONFIG, CURRENT_BATCH, PARAMETERS, STAKERINFO, STATE
+    get_finished_amount, read_unbond_history, remove_unbond_wait_list, store_unbond_history, store_unbond_wait_list, CONFIG, CURRENT_BATCH, PARAMETERS, STAKERINFO, STATE, TOKEN_SUPPLY
 };
 use basset::hub::{CurrentBatch, State, UnbondHistory};
 use cosmwasm_std::{
-    attr, coin, coins, to_binary, BankMsg, CosmosMsg, Decimal, DepsMut, Env, MessageInfo, Response,
-    StakingMsg, StdError, StdResult, Storage, Uint128, WasmMsg,Decimal256, Uint256
+    attr, coin, coins, BankMsg, CosmosMsg, Decimal, DepsMut, Env, MessageInfo, Response,
+    StakingMsg, StdError, StdResult, Storage, Uint128,Decimal256, Uint256
 };
 
-use cw20::Cw20ExecuteMsg;
 use nexus_validator_registary::common::calculate_undelegations;
 use nexus_validator_registary::registry::ValidatorResponse;
 use nibiru_std::proto::cosmos::base;
-use nibiru_std::proto::cosmos::tx::config;
 use nibiru_std::proto::NibiruStargateMsg;
 use signed_integers::SignedInt;
 
@@ -39,6 +37,7 @@ pub fn execute_withdraw_unbonded(
     if params.paused.unwrap_or(false) {
         return Err(StdError::generic_err("The contract is temporarily paused"));
     }
+   
     let sender_human = info.sender;
     let contract_address = env.contract.address.clone();
     let unbonding_period = params.unbonding_period;
@@ -75,13 +74,6 @@ pub fn execute_withdraw_unbonded(
         Ok(last_state)
     })?;
 
-    // Send the money to the user
-    let msgs: Vec<CosmosMsg> = vec![BankMsg::Send {
-        to_address: sender_human.to_string(),
-        amount: coins(withdraw_amount.u128(), &*coin_denom),
-    }
-    .into()];
-
     let staker_info = STAKERINFO.may_load(deps.storage, sender_human.clone().into_string())?;
     let new_staker_info = match staker_info {
         Some(mut d) =>{
@@ -96,12 +88,23 @@ pub fn execute_withdraw_unbonded(
         }
 
     };
+
+    // Send the money to the user
+    let msgs: Vec<CosmosMsg> = vec![BankMsg::Send {
+        to_address: sender_human.to_string(),
+        amount: coins(withdraw_amount.u128(), &*coin_denom),
+    }
+    .into()];
+
+   
     let _  = STAKERINFO.save(deps.storage, sender_human.to_string(),&new_staker_info );
 
     let res = Response::new().add_messages(msgs).add_attributes(vec![
         attr("action", "finish_burn"),
         attr("from", contract_address),
         attr("amount", withdraw_amount),
+        attr("amount_withdrawn", withdraw_amount.to_string()),
+        attr("updated_hub_balance", prev_balance.to_string()),
     ]);
     Ok(res)
 }
@@ -201,7 +204,6 @@ fn calculate_new_withdraw_rate(
 }
 
 
-
 /// This is designed for an accurate unbonded amount calculation.
 /// Execute while processing withdraw_unbonded
 fn process_withdraw_rate(
@@ -217,6 +219,8 @@ fn process_withdraw_rate(
         calculate_newly_added_unbonded_amount(deps.storage, last_processed_batch, historical_time);
 
     if batch_count < 1 {
+        // return Err(StdError::generic_err("NO BATCHES AVAILABLE"));
+
         return Ok(());
     }
 
@@ -355,12 +359,8 @@ pub(crate) fn execute_unbond_stnibi(
 
     // Send Burn message to token contract
     let config = CONFIG.load(deps.storage)?;
-    let token_address = config
-        .stnibi_token_contract
-        .ok_or_else(|| StdError::generic_err("the token contract must have been registered"))?;
-    let config = CONFIG.load(deps.storage)?;
     let coin_denom  =config.stnibi_denom.unwrap() ;
-    let contract_address = env.clone().contract.address.into_string();
+    let contract_address = env.contract.address.into_string();
         let cosmos_msg: CosmosMsg = nibiru_std::proto::nibiru::tokenfactory::MsgBurn {
             sender: contract_address.clone(),
             // TODO cosmwasm-std Coin should implement into()
@@ -370,7 +370,7 @@ pub(crate) fn execute_unbond_stnibi(
                 denom: coin_denom.clone(),
                 amount: amount.to_string(),
             }),
-            burn_from:contract_address,
+            burn_from:sender.clone(),
         }
         .into_stargate_msg();
         
@@ -380,23 +380,47 @@ pub(crate) fn execute_unbond_stnibi(
     //     msg: to_binary(&cosmos_msg)?,
     //     funds: vec![],
     // }));
-    messages.push(cosmos_msg);
-    let staker_info = STAKERINFO.may_load(deps.storage,sender.clone()).unwrap();
-
-    let new_staker_info = match staker_info {
-        Some(mut d) =>{
-                d.amount_stnibi_balance -= amount;
-                d            
-        },
-        None =>{
-            return Err(StdError::generic_err(
-                "NIBI not staked",
-            ));
+    let denom_parts: Vec<&str> = coin_denom.split('/').collect();
+    if denom_parts.len() != 3 {
+        return Err(StdError::GenericErr {
+            msg: "invalid denom input".to_string(),
         }
+        .into());
+    }
+    let subdenom = denom_parts[2];
+    let supply_key = subdenom;
+    let token_supply =
+    TOKEN_SUPPLY.may_load(deps.storage, supply_key)?;
+    match token_supply {
+        Some(supply) => {
+            let new_supply = supply - amount; 
+            TOKEN_SUPPLY.save(deps.storage, supply_key, &new_supply)
+        }?,
+        None => {
+            return Err(StdError::generic_err(
+                "Zero stNIBI in circulation supply",
+            ));
+    }
+    }
 
-     };
+    messages.push(cosmos_msg);
+    // let staker_info = STAKERINFO.may_load(deps.storage,sender.clone()).unwrap();
 
-    let _  = STAKERINFO.save(deps.storage, sender.clone(),&new_staker_info );
+    // let new_staker_info = match staker_info {
+    //     Some(mut d) =>{
+    //             d.amount_stnibi_balance -= amount;
+    //             d.amount_staked_unibi -= amount; 
+    //             d            
+    //     },
+    //     None =>{
+    //         return Err(StdError::generic_err(
+    //             "NIBI not staked",
+    //         ));
+    //     }
+
+    //  };
+
+    // let _  = STAKERINFO.save(deps.storage, sender.clone(),&new_staker_info );
 
     let res = Response::new().add_messages(messages).add_attributes(vec![
         attr("action", "burn"),

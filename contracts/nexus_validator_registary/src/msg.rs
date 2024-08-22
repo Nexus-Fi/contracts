@@ -36,6 +36,7 @@ pub enum ExecuteMsg {
         owner: Option<String>,
         hub_contract: Option<String>,
     },
+    Redelegations { address: String }, 
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

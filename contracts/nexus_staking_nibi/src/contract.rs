@@ -140,11 +140,47 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
             ExecuteMsg::RemoveGuardians { addresses } => {
                 execute_remove_guardians(deps, env, info, addresses)
             },
+            ExecuteMsg::RedelegateProxy {
+                src_validator,
+                redelegations,
+            } => execute_redelegate_proxy(deps, env, info, src_validator, redelegations),
     }
 }
 
 
 
+pub fn execute_redelegate_proxy(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    src_validator: String,
+    redelegations: Vec<(String, Coin)>,
+) -> StdResult<Response> {
+    let sender_contract_addr = deps.api.addr_canonicalize(info.sender.as_str())?;
+    let conf = CONFIG.load(deps.storage)?;
+    let validators_registry_contract = conf.validators_registry_contract.ok_or_else(|| {
+        StdError::generic_err("the validator registry contract must have been registered")
+    })?;
+
+    if sender_contract_addr != validators_registry_contract {
+        return Err(StdError::generic_err("unauthorized"));
+    }
+
+    let messages: Vec<CosmosMsg> = redelegations
+        .into_iter()
+        .map(|(dst_validator, amount)| {
+            cosmwasm_std::CosmosMsg::Staking(StakingMsg::Redelegate {
+                src_validator: src_validator.clone(),
+                dst_validator,
+                amount,
+            })
+        })
+        .collect();
+
+    let res = Response::new().add_messages(messages);
+
+    Ok(res)
+}
 
 
 pub fn execute_add_guardians(

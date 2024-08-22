@@ -58,6 +58,7 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
             owner,
             hub_contract,
         } => execute_update_config(deps, env, info, owner, hub_contract),
+        ExecuteMsg::Redelegations { address } => redelegations(deps, env, info, address),
     }
 }
 
@@ -196,6 +197,81 @@ pub fn remove_validator(
     let res = Response::new().add_messages(messages);
     Ok(res)
 }
+
+
+pub fn redelegations(
+    deps: DepsMut,
+    _env: Env,
+    _info: MessageInfo,
+    validator_address: String,
+) -> StdResult<Response> {
+    let config = CONFIG.load(deps.storage)?;
+    let hub_address = deps.api.addr_humanize(&config.hub_contract)?;
+
+    if REGISTRY.has(deps.storage, validator_address.as_str().as_bytes()) {
+        return  Err(StdError::generic_err("Normally registered verification nodes cannot initiate re-delegation voting operations."));
+    }
+
+    let mut validators = query_validators(deps.as_ref())?;
+    validators.sort_by(|v1, v2| v1.total_delegated.cmp(&v2.total_delegated));
+
+    let query = deps
+        .querier
+        .query_delegation(hub_address.clone(), validator_address.clone());
+
+    let mut messages: Vec<CosmosMsg> = vec![];
+    if let Ok(q) = query {
+        let delegated_amount = q;
+
+        let mut redelegations: Vec<(String, Coin)> = vec![];
+        if let Some(delegation) = delegated_amount {
+            // Terra core returns zero if there is another active redelegation
+            // That means we cannot start a new redelegation, so we only remove a validator from
+            // the registry.
+            // We'll do a redelegation manually later by sending RedelegateProxy to the hub
+            if delegation.can_redelegate.amount < delegation.amount.amount {
+                return StdResult::Ok(Response::new());
+            }
+
+            let (_, delegations) =
+                calculate_delegations(delegation.amount.amount, validators.as_slice())?;
+
+            for i in 0..delegations.len() {
+                if delegations[i].is_zero() {
+                    continue;
+                }
+                redelegations.push((
+                    validators[i].address.clone(),
+                    Coin::new(delegations[i].u128(), delegation.amount.denom.as_str()),
+                ));
+            }
+
+            let regelegate_msg = RedelegateProxy {
+                src_validator: validator_address,
+                redelegations,
+            };
+            messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
+                contract_addr: hub_address.clone().into_string(),
+                msg: to_json_binary(&regelegate_msg)?,
+                funds: vec![],
+            }));
+
+            // let msg = UpdateGlobalIndex {
+            //     airdrop_hooks: None,
+            // };
+            // messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
+            //     contract_addr: hub_address.into_string(),
+            //     msg: to_json_binary(&msg)?,
+            //     funds: vec![],
+            // }));
+        }
+    }
+
+    let res = Response::new().add_messages(messages);
+    Ok(res)
+}
+
+
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {

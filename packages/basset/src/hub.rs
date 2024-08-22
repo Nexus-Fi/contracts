@@ -136,6 +136,12 @@ pub enum ExecuteMsg {
     },
     ///create the token denom
     CreateDenom { subdenom:String },
+    
+    RedelegateProxy {
+        // delegator is automatically set to address of the calling contract
+        src_validator: String,
+        redelegations: Vec<(String, Coin)>, //(dst_validator, amount)
+    },
 }
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct CoinDenom{

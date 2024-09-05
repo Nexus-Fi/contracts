@@ -1,0 +1,23 @@
+{
+  "name": "evm-test",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "ts-node src/index.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@cosmjs/encoding": "^0.32.4",
+    "@cosmjs/proto-signing": "^0.32.4",
+    "@cosmjs/stargate": "^0.32.4",
+    "@types/ws": "^8.5.12",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.13.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4",
+    "ws": "^8.18.0"
+  }
+}

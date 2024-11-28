@@ -1,0 +1,13 @@
+{
+    "compilerOptions": {
+      "module": "ESNext",
+      "target": "ESNext",
+      "moduleResolution": "Node",
+      "esModuleInterop": true,
+      "outDir": "./dist",
+      "strict": true
+    },
+    "include": ["./**/*.ts"],  // Includes all TypeScript files in the project
+    "exclude": ["node_modules"]
+  }
+  

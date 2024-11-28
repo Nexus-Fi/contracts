@@ -134,6 +134,7 @@ pub fn execute_bond(
             .into());
         }
     };
+    
     let cosmos_msg: CosmosMsg = nibiru::tokenfactory::MsgMint {
         sender: contract_addr,
         // TODO feat: cosmwasm-std Coin should implement into()

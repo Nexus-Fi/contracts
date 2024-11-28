@@ -54,15 +54,20 @@ async function getCosmosSigningClient(wallet: DirectSecp256k1HdWallet): Promise<
 type EvmWalletType = ethers.Wallet | ethers.JsonRpcSigner;
 
 async function getEvmWallet(privateKeyOrAddress: string): Promise<EvmWalletType> {
-  if (process.env.NODE_ENV === 'development') {
-    const provider = new ethers.JsonRpcProvider('http://localhost:8545');
-    return await provider.getSigner(privateKeyOrAddress);
-  } else {
-    return new ethers.Wallet(privateKeyOrAddress, new ethers.JsonRpcProvider(EVM_RPC_ENDPOINT));
-  }
+  // if (process.env.NODE_ENV === 'development') {
+  //   const provider = new ethers.JsonRpcProvider('http://localhost:8545');
+  //   return await provider.getSigner(privateKeyOrAddress);
+  // } else {
+  // }
+  return new ethers.Wallet(privateKeyOrAddress, new ethers.JsonRpcProvider(EVM_RPC_ENDPOINT));
+
 }
 
 async function mintStNibiOnEvm(evmWallet: EvmWalletType, to: string, amount: string) {
+  const mnemonic = "guard cream sadness conduct invite crumble clock pudding hole grit liar hotel maid produce squeeze return argue turtle know drive eight casino maze host";
+
+// Create a wallet using the mnemonic
+
   const bridgeContract = new ethers.Contract(EVM_BRIDGE_ADDRESS, EVM_BRIDGE_ABI, evmWallet);
   
   try {
@@ -131,14 +136,17 @@ async function monitorCosmosChain(cosmosWallet: DirectSecp256k1HdWallet, evmWall
 
 async function main() {
   const cosmosMnemonic = process.env.COSMOS_MNEMONIC;
-  const evmPrivateKeyOrAddress = process.env.NODE_ENV === 'development' ? TEST_ACCOUNT_ADDRESS : process.env.EVM_PRIVATE_KEY;
+  const evmPrivateKeyOrAddress =  process.env.EVM_PRIVATE_KEY;
 
   if (!cosmosMnemonic || !evmPrivateKeyOrAddress) {
     throw new Error("Missing environment variables. Please check your .env file.");
   }
 
   const cosmosWallet = await DirectSecp256k1HdWallet.fromMnemonic(cosmosMnemonic, { prefix: "nibi" });
-  const evmWallet = await getEvmWallet(evmPrivateKeyOrAddress);
+  const wallet = ethers.Wallet.fromPhrase(evmPrivateKeyOrAddress);
+const privateKey = wallet.privateKey;
+const publicKey = wallet.publicKey
+  const evmWallet = await getEvmWallet(privateKey);
 
   await monitorCosmosChain(cosmosWallet, evmWallet);
 }

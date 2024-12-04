@@ -17,7 +17,7 @@ use crate::math::decimal_division;
 use crate::state::{StakerInfo, CONFIG, CURRENT_BATCH, PARAMETERS, STAKERINFO, STATE, TOKEN_SUPPLY};
 use basset::hub::{BondType, Parameters};
 use cosmwasm_std::{
-    attr, coin, to_binary, Coin, CosmosMsg, DepsMut, Env, MessageInfo, QueryRequest, Response, StakingMsg, StdError, StdResult, Uint128, Uint256, WasmMsg, WasmQuery
+    attr, to_binary, Coin, CosmosMsg, DepsMut, Env, MessageInfo, QueryRequest, Response, StakingMsg, StdError, StdResult, Uint128, Uint256, WasmMsg, WasmQuery
 };
 use nexus_validator_registary::common::calculate_delegations;
 use nexus_validator_registary::msg::QueryMsg as QueryValidators;

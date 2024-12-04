@@ -79,7 +79,6 @@ pub fn instantiate(
 }
 
 
-
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> StdResult<Response> {
     match msg {
@@ -140,10 +139,6 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
             ExecuteMsg::RemoveGuardians { addresses } => {
                 execute_remove_guardians(deps, env, info, addresses)
             },
-            // ExecuteMsg::RedelegateProxy {
-            //     src_validator,
-            //     redelegations,
-            // } => execute_redelegate_proxy(deps, env, info, src_validator, redelegations),
     }
 }
 
@@ -182,6 +177,7 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
 //     Ok(res)
 // }
 
+    
 
 pub fn execute_add_guardians(
     deps: DepsMut,

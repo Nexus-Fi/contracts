@@ -33,6 +33,12 @@ pub struct State {
    
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, Default)]
+pub struct UserDashBoard{
+    
+}
+
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Config {
     pub creator: Addr,
@@ -137,8 +143,8 @@ pub enum ExecuteMsg {
     ///create the token denom
     CreateDenom { subdenom:String },
     
-    
 }
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct CoinDenom{
     stnibi:String
@@ -172,6 +178,8 @@ pub struct UnbondHistory {
     pub stnibi_withdraw_rate: Decimal,
     pub released: bool,
 }
+
+
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct UnbondHistoryResponse {

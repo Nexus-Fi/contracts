@@ -178,7 +178,7 @@ pub fn execute_bond(
         )?
     }
     }
-    // exchange rate should be updated for future
+    // exchange rate should be updated for futuremint_amount
     STATE.update(deps.storage, |mut prev_state| -> StdResult<_> {
         match bond_type {
             BondType::BondRewards => {

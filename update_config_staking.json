@@ -1,8 +1,8 @@
 {
     "update_config":{
-        "owner":"nibi1hzty850q3vnew33yuft82j0v5fazyvfcescxhs",
-        "rewards_dispatcher_contract":"nibi1sxr9eqgz7wuy8qfd3uwp06n4cu5tl5e7tnnm76z9wwtjd0dngu3st5mucu",
-        "validators_registry_contract":"nibi1uhlm89f6cr6488vx97rhd2gfqskvpel2uv4960ugxnsty3qgldhsztxcf7",
-        "stnibi_denom":"tf/nibi1yqfqqaa74s74sl4ds659pjaqcxsns8xsrl23r4mxd0lle30rv7mq87aekz/stNibi"
+        "owner":null,
+        "rewards_dispatcher_contract":null,
+        "validators_registry_contract":"nibi1el3j70mcw8plulgj5yf56w60fk56anac9nr33ea99c3qywhqfe7qh2cp5c",
+        "stnibi_denom":null
     }
 }

@@ -149,6 +149,7 @@ fn calculate_newly_added_unbonded_amount(
     (stnibi_total_unbonded_amount, batch_count)
 }
 
+
 fn calculate_new_withdraw_rate(
     amount: Uint128,
     withdraw_rate: Decimal,

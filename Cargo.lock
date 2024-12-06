@@ -676,6 +676,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexus_stnibi_token"
+version = "0.1.0"
+dependencies = [
+ "basset",
+ "cosmwasm-std",
+ "cosmwasm-storage",
+ "cw-storage-plus 0.16.0",
+ "cw2",
+ "cw20",
+ "cw20-base",
+ "schemars",
+ "serde",
+ "snafu",
+]
+
+[[package]]
 name = "nexus_stnibi_vault"
 version = "0.1.0"
 dependencies = [

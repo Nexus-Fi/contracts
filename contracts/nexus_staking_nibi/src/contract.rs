@@ -120,6 +120,7 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
                 owner,
                 rewards_dispatcher_contract,
                 validators_registry_contract,
+                stnibi_token_contract,
                 stnibi_denom
             } => execute_update_config(
                 deps,
@@ -127,6 +128,7 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
                 info,
                 owner,
                 rewards_dispatcher_contract,
+                stnibi_token_contract,
                 validators_registry_contract,
                 stnibi_denom
             ),
@@ -310,20 +312,23 @@ pub fn receive_cw20(
     // only token contract can execute this message
     let conf = CONFIG.load(deps.storage)?;
 
-    // let stnibi_contract_addr = if let Some(st) = conf.stnibi_token_contract {
-    //     st
-    // } else {
-    //     return Err(StdError::generic_err(
-    //         "the stnibi token contract must have been registered",
-    //     ));
-    // };
-    // 
+    let statom_contract_addr = if let Some(st) = conf.stnibi_token_contract {
+        st
+    } else {
+        return Err(StdError::generic_err(
+            "the statom token contract must have been registered",
+        ));
+    };
 
     match from_binary(&cw20_msg.msg)? {
         Cw20HookMsg::Unbond {} => {
-        execute_unbond_stnibi(deps, env, cw20_msg.amount, cw20_msg.sender)
-        },
-        Cw20HookMsg::Restake {  } => todo!()
+            if contract_addr == statom_contract_addr {
+                execute_unbond_stnibi(deps, env, cw20_msg.amount, cw20_msg.sender)
+            } else {
+                Err(StdError::generic_err("unauthorized"))
+            }
+        }
+        Cw20HookMsg::Restake {  } => todo!(),
     }
 }
 

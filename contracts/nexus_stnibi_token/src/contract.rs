@@ -72,7 +72,18 @@ pub fn execute(
         )));
     }
 
-    match msg {ExecuteMsg::Transfer{recipient,amount}=>{execute_transfer(deps,env,info,recipient,amount)}ExecuteMsg::Burn{amount}=>execute_burn(deps,env,info,amount),ExecuteMsg::Send{contract,amount,msg,}=>execute_send(deps,env,info,contract,amount,msg),ExecuteMsg::Mint{recipient,amount}=>execute_mint(deps,env,info,recipient,amount),ExecuteMsg::IncreaseAllowance{spender,amount,expires,}=>execute_increase_allowance(deps,env,info,spender,amount,expires),ExecuteMsg::DecreaseAllowance{spender,amount,expires,}=>execute_decrease_allowance(deps,env,info,spender,amount,expires),ExecuteMsg::TransferFrom{owner,recipient,amount,}=>execute_transfer_from(deps,env,info,owner,recipient,amount),ExecuteMsg::BurnFrom{owner,amount}=>execute_burn_from(deps,env,info,owner,amount),ExecuteMsg::SendFrom{owner,contract,amount,msg,}=>execute_send_from(deps,env,info,owner,contract,amount,msg),ExecuteMsg::UpdateMarketing{project, #[doc=" A longer description of the token and it\'s utility. Designed for tooltips or such"]description, #[doc=" The address (if any) who can update this data structure"]marketing,}=>execute_update_marketing(deps,env,info,project,description,marketing),ExecuteMsg::UploadLogo(logo)=>execute_upload_logo(deps,env,info,logo),
+    match msg {
+    ExecuteMsg::Transfer{recipient,amount}=>{execute_transfer(deps,env,info,recipient,amount)}
+    ExecuteMsg::Burn{amount}=>execute_burn(deps,env,info,amount),
+    ExecuteMsg::Send{contract,amount,msg,}=>execute_send(deps,env,info,contract,amount,msg),
+    ExecuteMsg::Mint{recipient,amount}=>execute_mint(deps,env,info,recipient,amount),
+    ExecuteMsg::IncreaseAllowance{spender,amount,expires,}=>execute_increase_allowance(deps,env,info,spender,amount,expires),
+    ExecuteMsg::DecreaseAllowance{spender,amount,expires,}=>execute_decrease_allowance(deps,env,info,spender,amount,expires),
+    ExecuteMsg::TransferFrom{owner,recipient,amount,}=>execute_transfer_from(deps,env,info,owner,recipient,amount),
+    ExecuteMsg::BurnFrom{owner,amount}=>execute_burn_from(deps,env,info,owner,amount),
+    ExecuteMsg::SendFrom{owner,contract,amount,msg,}=>execute_send_from(deps,env,info,owner,contract,amount,msg),
+    ExecuteMsg::UpdateMarketing{project, #[doc=" A longer description of the token and it\'s utility. Designed for tooltips or such"]description, #[doc=" The address (if any) who can update this data structure"]marketing,}=>execute_update_marketing(deps,env,info,project,description,marketing),
+    ExecuteMsg::UploadLogo(logo)=>execute_upload_logo(deps,env,info,logo),
     ExecuteMsg::UpdateMinter { new_minter } => todo!(), }
 }
 

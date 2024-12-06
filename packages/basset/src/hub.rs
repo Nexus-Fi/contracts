@@ -76,7 +76,7 @@ pub enum ExecuteMsg {
         owner: Option<String>,
         rewards_dispatcher_contract: Option<String>,
         validators_registry_contract: Option<String>,
-        // stnibi_token_contract: Option<String>,  
+        stnibi_token_contract: Option<String>,  
         stnibi_denom:Option<String>
     },
 

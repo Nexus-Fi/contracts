@@ -18,10 +18,10 @@ use crate::state::{
 };
 use basset::hub::{CurrentBatch, State, UnbondHistory};
 use cosmwasm_std::{
-    attr, coin, coins, BankMsg, CosmosMsg, Decimal, DepsMut, Env, MessageInfo, Response,
-    StakingMsg, StdError, StdResult, Storage, Uint128,Decimal256, Uint256
+    attr, coin, coins, to_binary, BankMsg, CosmosMsg, Decimal, Decimal256, DepsMut, Env, MessageInfo, Response, StakingMsg, StdError, StdResult, Storage, Uint128, Uint256, WasmMsg
 };
 
+use cw20::Cw20ExecuteMsg;
 use nexus_validator_registary::common::calculate_undelegations;
 use nexus_validator_registary::registry::ValidatorResponse;
 use nibiru_std::proto::cosmos::base;
@@ -37,7 +37,6 @@ pub fn execute_withdraw_unbonded(
     if params.paused.unwrap_or(false) {
         return Err(StdError::generic_err("The contract is temporarily paused"));
     }
-   
     let sender_human = info.sender;
     let contract_address = env.contract.address.clone();
     let unbonding_period = params.unbonding_period;
@@ -63,31 +62,16 @@ pub fn execute_withdraw_unbonded(
             coin_denom
         )));
     }
-    
+
     // remove the previous batches for the user
     remove_unbond_wait_list(deps.storage, deprecated_batches, sender_human.to_string())?;
 
-    // Update previous balance used for calculation in next  batch release
+    // Update previous balance used for calculation in next Atom batch release
     let prev_balance = hub_balance.checked_sub(withdraw_amount)?;
     STATE.update(deps.storage, |mut last_state| -> StdResult<_> {
         last_state.prev_hub_balance = prev_balance;
         Ok(last_state)
     })?;
-
-    let staker_info = STAKERINFO.may_load(deps.storage, sender_human.clone().into_string())?;
-    let new_staker_info = match staker_info {
-        Some(mut d) =>{
-                d.amount_stnibi_balance -= withdraw_amount;
-                d.amount_staked_unibi -= withdraw_amount;
-                d            
-        },
-        None =>{
-            return Err(StdError::generic_err(
-                "NIBI not staked",
-            ));
-        }
-
-    };
 
     // Send the money to the user
     let msgs: Vec<CosmosMsg> = vec![BankMsg::Send {
@@ -96,15 +80,10 @@ pub fn execute_withdraw_unbonded(
     }
     .into()];
 
-   
-    let _  = STAKERINFO.save(deps.storage, sender_human.to_string(),&new_staker_info );
-
     let res = Response::new().add_messages(msgs).add_attributes(vec![
         attr("action", "finish_burn"),
         attr("from", contract_address),
         attr("amount", withdraw_amount),
-        attr("amount_withdrawn", withdraw_amount.to_string()),
-        attr("updated_hub_balance", prev_balance.to_string()),
     ]);
     Ok(res)
 }
@@ -328,110 +307,72 @@ pub(crate) fn execute_unbond_stnibi(
     amount: Uint128,
     sender: String,
 ) -> StdResult<Response> {
-    // Read params
-    let params = PARAMETERS.load(deps.storage)?;
-    let epoch_period = params.epoch_period;
-
-    let mut current_batch = CURRENT_BATCH.load(deps.storage)?;
-
-    // Check slashing, update state, and calculate the new exchange rate.
-    let mut state = slashing(&mut deps, env.clone())?;
-
-    // Collect all the requests within a epoch period
-    current_batch.requested_stnibi += amount;
-
-    store_unbond_wait_list(deps.storage, current_batch.id, sender.clone(), amount)?;
-
-    let current_time = env.clone().block.time.seconds();
-    let passed_time = current_time - state.last_unbonded_time;
-
-    let mut messages: Vec<CosmosMsg> = vec![];
-
-    // If the epoch period is passed, the undelegate message would be sent.
-    if passed_time > epoch_period {
-        let mut undelegate_msgs =
-            process_undelegations(&mut deps, env.clone(), &mut current_batch, &mut state)?;
-        messages.append(&mut undelegate_msgs);
-    }
-    
-    // Store the new requested_with_fee or id in the current batch
-    CURRENT_BATCH.save(deps.storage, &current_batch)?;
-
-    // Store state's new exchange rate
-    STATE.save(deps.storage, &state)?;
-
-    // Send Burn message to token contract
-    let config = CONFIG.load(deps.storage)?;
-    let coin_denom  =config.stnibi_denom.unwrap() ;
-    let contract_address = env.contract.address.into_string();
-        let cosmos_msg: CosmosMsg = nibiru_std::proto::nibiru::tokenfactory::MsgBurn {
-            sender: contract_address.clone(),
-            // TODO cosmwasm-std Coin should implement into()
-            // base::v1beta1::Coin.
-
-            coin: Some(base::v1beta1::Coin {
-                denom: coin_denom.clone(),
-                amount: amount.to_string(),
-            }),
-            burn_from:sender.clone(),
-        }
-        .into_stargate_msg();
-        
-    // let burn_msg = Cw20ExecuteMsg::Burn { amount };
-    // messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
-    //     contract_addr: token_address.to_string(),
-    //     msg: to_binary(&cosmos_msg)?,
-    //     funds: vec![],
-    // }));
-    let denom_parts: Vec<&str> = coin_denom.split('/').collect();
-    if denom_parts.len() != 3 {
-        return Err(StdError::GenericErr {
-            msg: "invalid denom input".to_string(),
-        }
-        .into());
-    }
-    let subdenom = denom_parts[2];
-    let supply_key = subdenom;
-    let token_supply =
-    TOKEN_SUPPLY.may_load(deps.storage, supply_key)?;
-    match token_supply {
-        Some(supply) => {
-            let new_supply = supply - amount; 
-            TOKEN_SUPPLY.save(deps.storage, supply_key, &new_supply)
-        }?,
-        None => {
-            return Err(StdError::generic_err(
-                "Zero stNIBI in circulation supply",
-            ));
-    }
-    }
-
-    messages.push(cosmos_msg);
-    // let staker_info = STAKERINFO.may_load(deps.storage,sender.clone()).unwrap();
-
-    // let new_staker_info = match staker_info {
-    //     Some(mut d) =>{
-    //             d.amount_stnibi_balance -= amount;
-    //             d.amount_staked_unibi -= amount; 
-    //             d            
-    //     },
-    //     None =>{
-    //         return Err(StdError::generic_err(
-    //             "NIBI not staked",
-    //         ));
-    //     }
-
-    //  };
-
-    // let _  = STAKERINFO.save(deps.storage, sender.clone(),&new_staker_info );
-
-    let res = Response::new().add_messages(messages).add_attributes(vec![
-        attr("action", "burn"),
-        attr("from", sender),
-        attr("burnt_amount", amount),
-        attr("unbonded_amount", amount),
-    ]);
-    Ok(res)
+     // Read params
+     let params = PARAMETERS.load(deps.storage)?;
+     let epoch_period = params.epoch_period;
+ 
+     let mut current_batch = CURRENT_BATCH.load(deps.storage)?;
+ 
+     // Check slashing, update state, and calculate the new exchange rate.
+     let mut state = slashing(&mut deps, env.clone())?;
+ 
+     // Collect all the requests within a epoch period
+     current_batch.requested_stnibi += amount;
+ 
+     store_unbond_wait_list(deps.storage, current_batch.id, sender.clone(), amount)?;
+ 
+     let current_time = env.block.time.seconds();
+     let passed_time = current_time - state.last_unbonded_time;
+ 
+     let mut messages: Vec<CosmosMsg> = vec![];
+ 
+     // If the epoch period is passed, the undelegate message would be sent.
+     if passed_time > epoch_period {
+         let mut undelegate_msgs =
+             process_undelegations(&mut deps, env, &mut current_batch, &mut state)?;
+         messages.append(&mut undelegate_msgs);
+     }
+ 
+     // Store the new requested_with_fee or id in the current batch
+     CURRENT_BATCH.save(deps.storage, &current_batch)?;
+ 
+     // Store state's new exchange rate
+     STATE.save(deps.storage, &state)?;
+ 
+     // Send Burn message to token contract
+     let config = CONFIG.load(deps.storage)?;
+     let token_address = config
+         .stnibi_token_contract
+         .ok_or_else(|| StdError::generic_err("the token contract must have been registered"))?;
+ 
+     let burn_msg = Cw20ExecuteMsg::Burn { amount };
+     messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
+         contract_addr: token_address.to_string(),
+         msg: to_binary(&burn_msg)?,
+         funds: vec![],
+     }));
+     let subdenom = "";
+     let supply_key = subdenom;
+     let token_supply =
+     TOKEN_SUPPLY.may_load(deps.storage, supply_key)?;
+     match token_supply {
+         Some(supply) => {
+             let new_supply = supply - amount; 
+             TOKEN_SUPPLY.save(deps.storage, supply_key, &new_supply)
+         }?,
+         None => {
+             return Err(StdError::generic_err(
+                 "Zero stNIBI in circulation supply",
+             ));
+     }
+     }
+     let res = Response::new().add_messages(messages).add_attributes(vec![
+         attr("action", "burn"),
+         attr("from", sender),
+         attr("burnt_amount", amount),
+         attr("unbonded_amount", amount),
+     ]);
+     Ok(res)
 }
 
 fn process_undelegations(

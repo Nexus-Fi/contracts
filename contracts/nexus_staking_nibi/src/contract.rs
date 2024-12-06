@@ -16,6 +16,7 @@
 use cosmwasm_std::entry_point;
 use nibiru_std::proto::{nibiru, NibiruStargateMsg};
 use std::string::FromUtf8Error;
+//// this is v1 
 
 use cosmwasm_std::{
     attr, from_binary, to_binary, Addr, Binary, Coin, CosmosMsg, Decimal, Delegation, Deps, DepsMut, DistributionMsg, Env, MessageInfo, Order, QueryRequest, Response, StakingMsg, StdError, StdResult, Storage, Uint128, Validator, WasmMsg, WasmQuery

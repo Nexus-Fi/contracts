@@ -310,7 +310,7 @@ pub(crate) fn execute_unbond_stnibi(
      // Read params
      let params = PARAMETERS.load(deps.storage)?;
      let epoch_period = params.epoch_period;
- 
+     
      let mut current_batch = CURRENT_BATCH.load(deps.storage)?;
  
      // Check slashing, update state, and calculate the new exchange rate.
@@ -320,7 +320,7 @@ pub(crate) fn execute_unbond_stnibi(
      current_batch.requested_stnibi += amount;
  
      store_unbond_wait_list(deps.storage, current_batch.id, sender.clone(), amount)?;
- 
+    
      let current_time = env.block.time.seconds();
      let passed_time = current_time - state.last_unbonded_time;
  
@@ -329,7 +329,7 @@ pub(crate) fn execute_unbond_stnibi(
      // If the epoch period is passed, the undelegate message would be sent.
      if passed_time > epoch_period {
          let mut undelegate_msgs =
-             process_undelegations(&mut deps, env, &mut current_batch, &mut state)?;
+             process_undelegations(&mut deps, env.clone(), &mut current_batch, &mut state)?;
          messages.append(&mut undelegate_msgs);
      }
  
@@ -337,20 +337,32 @@ pub(crate) fn execute_unbond_stnibi(
      CURRENT_BATCH.save(deps.storage, &current_batch)?;
  
      // Store state's new exchange rate
-     STATE.save(deps.storage, &state)?;
- 
+    //  let contract = env.contract.address.into_string().clone(); 
      // Send Burn message to token contract
      let config = CONFIG.load(deps.storage)?;
      let token_address = config
          .stnibi_token_contract
          .ok_or_else(|| StdError::generic_err("the token contract must have been registered"))?;
- 
+     
+    //  let transfer_from_message = Cw20ExecuteMsg::TransferFrom { owner: sender.clone(), recipient: contract, amount: amount } ;
+    //  messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
+    //     contract_addr: token_address.to_string(),
+    //     msg: to_binary(&transfer_from_message)?,
+    //     funds: vec![],
+    // }));
+     
      let burn_msg = Cw20ExecuteMsg::Burn { amount };
      messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
          contract_addr: token_address.to_string(),
          msg: to_binary(&burn_msg)?,
          funds: vec![],
      }));
+
+
+     state.total_stnibi_burned = state.total_stnibi_burned + amount;
+
+     STATE.save(deps.storage, &state)?;
+
      let subdenom = "";
      let supply_key = subdenom;
      let token_supply =

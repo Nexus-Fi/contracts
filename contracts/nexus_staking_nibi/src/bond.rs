@@ -14,8 +14,8 @@
 
 use crate::contract::slashing;
 use crate::math::decimal_division;
-use crate::state::{StakerInfo, CONFIG, CURRENT_BATCH, PARAMETERS, STAKERINFO, STATE, TOKEN_SUPPLY};
-use basset::hub::{BondType, Parameters};
+use crate::state::{ CONFIG, CURRENT_BATCH, PARAMETERS, STAKERINFO, STATE, TOKEN_SUPPLY};
+use basset::hub::{BondType, Parameters,StakerInfo};
 use cosmwasm_std::{
     attr, to_binary, Coin, CosmosMsg, DepsMut, Env, MessageInfo, QueryRequest, Response, StakingMsg, StdError, StdResult, Uint128, Uint256, WasmMsg, WasmQuery
 };
@@ -189,7 +189,7 @@ pub fn execute_bond(
                     amount_stnibi_balance: mint_amount,
                     bonding_time: time.into(),
                     unbonding_period:None,
-                    validator_list: validators,
+                    validator_list: None,
                 }
             }
     

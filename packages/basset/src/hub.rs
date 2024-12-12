@@ -4,6 +4,7 @@ use cosmwasm_std::{
 use cw20::{Cw20ReceiveMsg, Denom};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+// use nexus_validator_registary::registry::ValidatorResponse;
 
 #[derive(PartialEq)]
 pub enum BondType {
@@ -30,13 +31,34 @@ pub struct State {
     pub prev_hub_balance: Uint128,
     pub last_unbonded_time: u64,
     pub last_processed_batch: u64,
+    pub total_stnibi_burned:Uint128
    
 }
+
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, Default)]
 pub struct UserDashBoard{
     
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct StakerInfo {
+    pub amount_staked_unibi: Uint128,
+    pub amount_stnibi_balance: Uint128,
+    pub bonding_time:Uint128,
+    pub unbonding_period:Option<Uint128>,
+    pub validator_list:Option<Vec<ValidatorResponse>>
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct ValidatorResponse {
+    #[serde(default)]
+    pub total_delegated: Uint128,
+
+    pub address: String,
+}
+
+
 
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -47,7 +69,8 @@ pub struct Config {
     pub stnibi_token_contract: Option<Addr>,
     pub stnibi_reserve:Option<Uint128>,
     pub total_bonded:Uint128,
-    pub stnibi_denom:Option<String>
+    pub stnibi_denom:Option<String>,
+    
 }
 
 
@@ -155,6 +178,7 @@ pub enum Cw20HookMsg {
     Unbond {},
     Restake {}
 }
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Parameters {
     pub epoch_period: u64,
@@ -263,8 +287,34 @@ pub enum QueryMsg {
     Guardians,
     Restake {staker:String},
     Staker{staker:String},
-    DelegationData{delegator:String}
+    DelegationData{delegator:String},
+    HubBalance{contract_address:String},
+    GetUnbondingInfo { user_address: String }
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct UnbondingInfoResponse {
+    pub contract_unbonding_period: u64,
+    pub protocol_unbonding_period: u64,  // Always 21 days (in seconds)
+    pub effective_unbonding_period: u64,  // Max of contract and protocol periods
+    pub unbonding_requests: Vec<UnbondingRequest>,
+    pub total_unbonding: Uint128,
+    pub is_unbonding_protocol_locked: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct UnbondingRequest {
+    pub batch_id: u64,
+    pub amount: Uint128,
+    pub time_requested: u64,
+    pub contract_release_time: u64,
+    pub protocol_release_time: u64,
+    pub final_release_time: u64,  // Max of contract and protocol release times
+}
+
+// Constants
+pub const COSMOS_UNBONDING_PERIOD: u64 = 21 * 24 * 60 * 60; // 21 days in seconds
+
 
 pub fn is_paused(deps: Deps, hub_addr: String) -> StdResult<bool> {
     let params: Parameters = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {

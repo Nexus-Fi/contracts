@@ -18,7 +18,7 @@ use nexus_validator_registary::registry::ValidatorResponse;
 use cw_storage_plus::{Item, Map};
 
 use basset::hub::{
-    CoinDenom,Config, CurrentBatch, Parameters , State, UnbondHistory, UnbondRequest, UnbondWaitEntity
+    CoinDenom,Config, CurrentBatch, Parameters , State, UnbondHistory, UnbondRequest, UnbondWaitEntity,StakerInfo
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -42,14 +42,14 @@ pub const MAX_DEFAULT_RANGE_LIMIT: u32 = 1000;
 pub static PREFIX_POOL_INFO: &[u8] = b"pool_info_v3";
 
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct StakerInfo {
-    pub amount_staked_unibi: Uint128,
-    pub amount_stnibi_balance: Uint128,
-    pub bonding_time:Uint128,
-    pub unbonding_period:Option<Uint128>,
-    pub validator_list:Vec<ValidatorResponse>
-}
+// #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+// pub struct StakerInfo {
+//     pub amount_staked_unibi: Uint128,
+//     pub amount_stnibi_balance: Uint128,
+//     pub bonding_time:Uint128,
+//     pub unbonding_period:Option<Uint128>,
+//     pub validator_list:Vec<ValidatorResponse>
+// }
 
 
 

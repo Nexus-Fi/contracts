@@ -12,17 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use basset::hub;
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 
 use cosmwasm_std::{
-    attr, to_binary, Attribute, BankMsg, Binary, Coin, CosmosMsg, Decimal, Deps, DepsMut, Env,
-    MessageInfo, Response, StdError, StdResult, Uint128, WasmMsg,
+    attr, to_binary, Attribute, BankMsg, Binary, Coin, CosmosMsg, Decimal, Deps, DepsMut, Env, MessageInfo, QueryRequest, Response, StdError, StdResult, Uint128, WasmMsg, WasmQuery
 };
 
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg};
 use crate::state::{Config, CONFIG};
-use basset::hub::{is_paused, ExecuteMsg::BondRewards};
+use basset::hub::{is_paused, ExecuteMsg::BondRewards,StakerInfo};
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -193,9 +193,28 @@ fn query_config(deps: Deps) -> StdResult<Config> {
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_binary(&query_config(deps)?),
-        QueryMsg::GetBufferedRewards {} => unimplemented!(),
+        QueryMsg::GetBufferedRewards {contract_addr} => to_binary(&get_buffered_rewards(deps,contract_addr)?),
+        QueryMsg::GetUserRewards { user_address, hub_contract ,contract_addr} => {
+            to_binary(&query_user_rewards(deps, user_address, hub_contract,contract_addr)?)
+        }
     }
 }
+
+fn get_buffered_rewards(deps:Deps,contr_addr:String) -> StdResult<Coin>{
+
+    let config: Config = CONFIG.load(deps.storage)?;
+
+    // let contr_addr = env.contract.address;
+    let mut stnibi_rewards = deps
+        .querier
+        .query_balance(contr_addr, config.stnibi_reward_denom.clone())?;
+
+    Ok(stnibi_rewards)
+
+   
+}
+
+
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
@@ -204,4 +223,47 @@ pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Respons
 
 pub fn compute_nexus_fee(amount: Uint128, fee_rate: Decimal) -> Uint128 {
     amount * fee_rate
+}
+
+
+
+pub fn query_user_rewards(deps: Deps, user_address: String, hub_contract: String,contract_addr:String) -> StdResult<Coin> {
+    
+    let config: Config = CONFIG.load(deps.storage)?;
+    
+    // Query user's staking info from hub contract
+    let staker_info: StakerInfo = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
+        contract_addr: hub_contract.clone(),
+        msg: to_binary(&hub::QueryMsg::Staker {
+            staker: user_address.clone(),
+        })?,
+    }))?;
+
+    // Get total staked amount from hub contract
+    let state: hub::StateResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
+        contract_addr: hub_contract.clone(),
+        msg: to_binary(&hub::QueryMsg::State {})?,
+    }))?;
+
+    // let reward_dispatcher_contract = config.
+    // Get total buffered rewards
+    let buffered_rewards = deps.querier.query_balance(
+        deps.api.addr_validate(&contract_addr)?,
+        config.stnibi_reward_denom.clone(),
+    )?;
+
+    // Calculate user's share of rewards
+    let user_reward_amount = if !state.total_bond_stnibi_amount.is_zero() {
+        buffered_rewards.amount.multiply_ratio(
+            staker_info.amount_stnibi_balance,
+            state.total_bond_stnibi_amount
+        )
+    } else {
+        Uint128::zero()
+    };
+
+    Ok(Coin {
+        denom: config.stnibi_reward_denom,
+        amount: user_reward_amount,
+    })
 }

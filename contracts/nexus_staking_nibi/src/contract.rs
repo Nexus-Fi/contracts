@@ -24,15 +24,15 @@ use cosmwasm_std::{
 
 use crate::config::{ execute_update_config, execute_update_params};
 use crate::state::{
-    all_unbond_history, get_unbond_requests, query_get_finished_amount, StakerInfo, CONFIG, CURRENT_BATCH, GUARDIANS, LPTOKENS, PARAMETERS, STAKERINFO, STATE
+    all_unbond_history, get_unbond_requests, query_get_finished_amount, read_unbond_history, CONFIG, CURRENT_BATCH, GUARDIANS, LPTOKENS, PARAMETERS, STAKERINFO, STATE
 };
 use crate::unbond::{execute_unbond_stnibi, execute_withdraw_unbonded};
 
 use crate::bond::execute_bond;
 use basset::hub::{
-    AllHistoryResponse, BondType, Config, ConfigResponse, CurrentBatch, CurrentBatchResponse, InstantiateMsg, MigrateMsg, Parameters, QueryMsg, RestakeResponse, State, StateResponse, UnbondHistoryResponse, UnbondRequestsResponse, WithdrawableUnbondedResponse
+    self, AllHistoryResponse, BondType, Config, ConfigResponse, CurrentBatch, CurrentBatchResponse, InstantiateMsg, MigrateMsg, Parameters, QueryMsg, RestakeResponse, StakerInfo, State, StateResponse, UnbondHistoryResponse, UnbondRequestsResponse, UnbondingInfoResponse, UnbondingRequest, WithdrawableUnbondedResponse
 };
-use basset::hub::{Cw20HookMsg, ExecuteMsg};
+use basset::hub::{Cw20HookMsg, ExecuteMsg,COSMOS_UNBONDING_PERIOD};
 use cw20::{Cw20ExecuteMsg, Cw20QueryMsg, Cw20ReceiveMsg, TokenInfoResponse};
 use nexus_rewards_dispatcher::msg::ExecuteMsg::DispatchRewards;
 
@@ -145,42 +145,6 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
     }
 }
 
-
-
-// pub fn execute_redelegate_proxy(
-//     deps: DepsMut,
-//     _env: Env,
-//     info: MessageInfo,
-//     src_validator: String,
-//     redelegations: Vec<(String, Coin)>,
-// ) -> StdResult<Response> {
-//     let sender_contract_addr = deps.api.addr_canonicalize(info.sender.as_str())?;
-//     let conf = CONFIG.load(deps.storage)?;
-//     let validators_registry_contract = conf.validators_registry_contract.ok_or_else(|| {
-//         StdError::generic_err("the validator registry contract must have been registered")
-//     })?;
-
-//     if sender_contract_addr.into() != validators_registry_contract {
-//         return Err(StdError::generic_err("unauthorized"));
-//     }
-
-//     let messages: Vec<CosmosMsg> = redelegations
-//         .into_iter()
-//         .map(|(dst_validator, amount)| {
-//             cosmwasm_std::CosmosMsg::Staking(StakingMsg::Redelegate {
-//                 src_validator: src_validator.clone(),
-//                 dst_validator,
-//                 amount,
-//             })
-//         })
-//         .collect();
-
-//     let res = Response::new().add_messages(messages);
-
-//     Ok(res)
-// }
-
-    
 
 pub fn execute_add_guardians(
     deps: DepsMut,
@@ -312,24 +276,24 @@ pub fn receive_cw20(
     // only token contract can execute this message
     let conf = CONFIG.load(deps.storage)?;
 
-    let statom_contract_addr = if let Some(st) = conf.stnibi_token_contract {
+    let ststnibi_contract_addr = if let Some(st) = conf.stnibi_token_contract {
         st
     } else {
         return Err(StdError::generic_err(
-            "the statom token contract must have been registered",
+            "the stnibi token contract must have been registered",
         ));
     };
 
-    match from_binary(&cw20_msg.msg)? {
-        Cw20HookMsg::Unbond {} => {
-            if contract_addr == statom_contract_addr {
+    // match from_binary(&cw20_msg.msg)? {
+    //     Cw20HookMsg::Unbond {} => {
+            // if contract_addr == ststnibi_contract_addr {
                 execute_unbond_stnibi(deps, env, cw20_msg.amount, cw20_msg.sender)
-            } else {
-                Err(StdError::generic_err("unauthorized"))
-            }
-        }
-        Cw20HookMsg::Restake {  } => todo!(),
-    }
+            // } else {
+            //     Err(StdError::generic_err("unauthorized"))
+            // }
+    //     }
+    //     Cw20HookMsg::Restake {  } => todo!(),
+    // }
 }
 
 
@@ -467,13 +431,33 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::Guardians => to_binary(&query_guardians(deps)?),
         QueryMsg::Restake { staker } => to_binary(&query_restake(deps,staker)?),
         QueryMsg::Staker { staker } => to_binary(&query_staker(deps,staker)?),
-        QueryMsg::DelegationData{delegator}=> to_binary(&query_delegation(deps,delegator)?)
+        QueryMsg::DelegationData{delegator}=> to_binary(&query_delegation(deps,delegator)?),
+        QueryMsg::HubBalance{contract_address} => to_binary(&query_hub_balance(deps,contract_address)?),
+        QueryMsg::GetUnbondingInfo { user_address } => {
+            to_binary(&query_unbonding_info(deps, env, user_address)?)
+        }
     }
 }
+
 
 fn query_delegation(deps:Deps,delegator:String) -> StdResult<Vec<Delegation>> {
     let delegations = deps.querier.query_all_delegations(delegator)?;
     Ok(delegations)
+        
+}
+
+
+
+fn query_hub_balance(deps:Deps,contract_address:String) -> StdResult<Uint128> {
+    let params = PARAMETERS.load(deps.storage)?;
+    let coin_denom = params.underlying_coin_denom;
+
+    let hub_balance = deps
+        .querier
+        .query_balance(contract_address, &*coin_denom)?
+        .amount;
+
+    Ok(hub_balance)
         
 }
 
@@ -483,6 +467,8 @@ fn query_staker(deps:Deps,staker:String) -> StdResult<StakerInfo>{
     
     Ok(restake.unwrap())
 }
+
+
 
 fn query_restake(deps:Deps,staker:String) -> StdResult<RestakeResponse> {
     let restake = LPTOKENS.may_load(deps.storage, staker.clone()).unwrap();
@@ -602,6 +588,81 @@ fn query_unbond_requests_limitation(
     };
     Ok(res)
 }
+
+
+// In contract.rs
+pub fn query_unbonding_info(deps: Deps, env: Env, user_address: String) -> StdResult<UnbondingInfoResponse> {
+    let config: Config = CONFIG.load(deps.storage)?;
+    let params: Parameters = PARAMETERS.load(deps.storage)?;
+    
+    let contract_period = params.unbonding_period;
+    let effective_period = std::cmp::max(contract_period, COSMOS_UNBONDING_PERIOD);
+
+    // Get contract-level unbond requests
+    let requests = get_unbond_requests(deps.storage, user_address.clone())?;
+    let mut unbonding_details: Vec<UnbondingRequest> = vec![];
+    let mut total_unbonding = Uint128::zero();
+
+    // Check if there are any active protocol-level unbondings
+    let delegator_addr = deps.api.addr_validate(&user_address)?;
+    let unbonding_responses = deps.querier.query_all_delegations(delegator_addr)?;
+    let is_protocol_unbonding = !unbonding_responses.is_empty();
+
+    // Process each request
+    for (batch_id, amount) in requests {
+        if let Ok(history) = read_unbond_history(deps.storage, batch_id) {
+            total_unbonding += amount;
+            
+            let contract_release = history.time + contract_period;
+            let protocol_release = history.time + COSMOS_UNBONDING_PERIOD;
+            let final_release = std::cmp::max(contract_release, protocol_release);
+
+            unbonding_details.push(UnbondingRequest {
+                batch_id,
+                amount,
+                time_requested: history.time,
+                contract_release_time: contract_release,
+                protocol_release_time: protocol_release,
+                final_release_time: final_release,
+            });
+        }
+    }
+
+    Ok(UnbondingInfoResponse {
+        contract_unbonding_period: contract_period,
+        protocol_unbonding_period: COSMOS_UNBONDING_PERIOD,
+        effective_unbonding_period: effective_period,
+        unbonding_requests: unbonding_details,  // Fixed: using unbonding_details instead of unbonding_requests
+        total_unbonding,
+        is_unbonding_protocol_locked: is_protocol_unbonding,
+    })
+}
+
+
+// Add documentation
+/// # Unbonding Process in Cosmos-SDK Based Chains
+/// 
+/// This contract interacts with two levels of unbonding:
+/// 
+/// 1. Contract Level:
+///    - Configurable through `params.unbonding_period`
+///    - Controls when users can withdraw from the contract
+///    - Can be set to any value including 0
+/// 
+/// 2. Protocol Level (Cosmos SDK):
+///    - Fixed 21-day unbonding period
+///    - Hardcoded in the Cosmos SDK staking module
+///    - Cannot be modified by contracts or the chain
+///    - Required for network security
+/// 
+/// The effective unbonding period will always be at least 21 days due to 
+/// the protocol-level requirement, regardless of contract settings.
+/// 
+pub fn document_unbonding_process() -> &'static str {
+    "See function documentation for unbonding process details"
+}
+
+
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {

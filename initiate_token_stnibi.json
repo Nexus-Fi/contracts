@@ -1,0 +1,26 @@
+{
+    "name":"NexusStakedNIBI",
+    "symbol":"testBiniq",
+    "decimals":6,
+    "initial_balances":[
+        {
+          "address": "nibi1gt7vts94scgqmj9tphuzy2rz4mdnyl5j4vlkrrm2pz2p0vkkkegs2luh35",
+          "amount": "0"
+        },
+        {
+            "address": "nibi1hzty850q3vnew33yuft82j0v5fazyvfcescxhs",
+            "amount": "0"
+        }
+    ],
+    "hub_contract":"nibi1gt7vts94scgqmj9tphuzy2rz4mdnyl5j4vlkrrm2pz2p0vkkkegs2luh35",
+    "marketing":{
+        "project":"https://nexusfi.xyz/",
+        "description":"Restaking made simple on nibiru",
+        "marketing":null,
+        "logo":{
+            "url":"https://raw.githubusercontent.com/Nexus-Fi/frontend/master/nexusfiLogo.jpeg"
+
+        }
+    }
+}
+

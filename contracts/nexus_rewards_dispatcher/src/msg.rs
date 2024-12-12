@@ -40,9 +40,14 @@ pub enum ExecuteMsg {
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     // GetBufferedRewards returns the buffered amount of stnibi rewards.
-    GetBufferedRewards {},
+    GetBufferedRewards {contract_addr:String},
     // Config returns config
     Config {},
+    GetUserRewards {
+        user_address: String,
+        hub_contract: String,
+        contract_addr:String
+    }
 }
 
 // We define a custom struct for each query response

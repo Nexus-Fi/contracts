@@ -14,6 +14,7 @@
 
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
+use cw_storage_plus::Bound;
 use nibiru_std::proto::{nibiru, NibiruStargateMsg};
 use std::string::FromUtf8Error;
 //// this is v1 
@@ -23,18 +24,21 @@ use cosmwasm_std::{
 };
 
 use crate::config::{ execute_update_config, execute_update_params};
+use crate::error::BalanceError;
 use crate::state::{
-    all_unbond_history, get_unbond_requests, query_get_finished_amount, read_unbond_history, CONFIG, CURRENT_BATCH, GUARDIANS, LPTOKENS, PARAMETERS, STAKERINFO, STATE
+    all_unbond_history, get_unbond_requests, query_get_finished_amount, read_unbond_history, BalanceAction, BalanceHistory, BalanceUpdate, BalanceUpdatesResponse, BALANCE_UPDATES, CONFIG, CURRENT_BATCH, GUARDIANS, LAST_UPDATE_ID, LPTOKENS, PARAMETERS, STAKERINFO, STAKERINFO_NEW, STATE
 };
 use crate::unbond::{execute_unbond_stnibi, execute_withdraw_unbonded};
 
 use crate::bond::execute_bond;
 use basset::hub::{
-    self, AllHistoryResponse, BondType, Config, ConfigResponse, CurrentBatch, CurrentBatchResponse, InstantiateMsg, MigrateMsg, Parameters, QueryMsg, RestakeResponse, StakerInfo, State, StateResponse, UnbondHistoryResponse, UnbondRequestsResponse, UnbondingInfoResponse, UnbondingRequest, WithdrawableUnbondedResponse
+    self, AllHistoryResponse, BondType, Config, ConfigResponse, CurrentBatch, CurrentBatchResponse, InstantiateMsg, MigrateMsg, Parameters, QueryMsg, RestakeResponse, StakerInfo, StakerInfoResponse, State, StateResponse, UnbondHistoryResponse, UnbondRequestsResponse, UnbondingInfoResponse, UnbondingRequest, WithdrawableUnbondedResponse
 };
 use basset::hub::{Cw20HookMsg, ExecuteMsg,COSMOS_UNBONDING_PERIOD};
 use cw20::{Cw20ExecuteMsg, Cw20QueryMsg, Cw20ReceiveMsg, TokenInfoResponse};
 use nexus_rewards_dispatcher::msg::ExecuteMsg::DispatchRewards;
+
+
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -397,10 +401,62 @@ pub fn slashing(deps: &mut DepsMut, env: Env) -> StdResult<State> {
 }
 
 /// Handler for tracking slashing
+/// NOT AUDITED
 pub fn execute_slashing(mut deps: DepsMut, env: Env) -> StdResult<Response> {
     let params: Parameters = PARAMETERS.load(deps.storage)?;
     if params.paused.unwrap_or(false) {
         return Err(StdError::generic_err("the contract is temporarily paused"));
+    }
+///////////////////////////
+    // Get previous state for comparison
+    let prev_state = STATE.load(deps.storage)?;
+    
+    // Call slashing to get new state with updated exchange rate
+    let new_state = slashing(&mut deps, env.clone())?;
+
+    // Calculate slash percentage if exchange rate decreased
+    if new_state.stnibi_exchange_rate < prev_state.stnibi_exchange_rate {
+        let slash_percentage = Decimal::one() - (new_state.stnibi_exchange_rate / prev_state.stnibi_exchange_rate);
+        
+        // Get all delegations to identify affected validators
+        let delegations = deps.querier.query_all_delegations(env.contract.address.clone())?;
+        let mut affected_validators = Vec::new();
+        
+        // Identify slashed validators by comparing delegation amounts
+        for delegation in delegations {
+            affected_validators.push(delegation.validator);
+        }
+
+        // Update all stakers' balances
+        // First, get all stakers (you might need to implement a way to track all stakers)
+        let stakers = STAKERINFO
+            .range(deps.storage, None, None, Order::Ascending)
+            .map(|item| {
+                let (staker, _) = item?;
+                Ok(staker)
+            })
+            .collect::<StdResult<Vec<String>>>()?;
+
+        // Update each staker's balance
+        for staker in stakers {
+            for validator in affected_validators.iter() {
+                let a= update_balances_for_slash(
+                    deps.storage,
+                    &staker,
+                    slash_percentage,
+                    validator.clone(),
+                    env.block.time.seconds(),
+                    env.block.height,
+                );
+            }
+        }
+
+        return Ok(Response::new().add_attributes(vec![
+            attr("action", "check_slashing"),
+            attr("new_stnibi_exchange_rate", new_state.stnibi_exchange_rate.to_string()),
+            attr("slash_percentage", slash_percentage.to_string()),
+            attr("affected_validators", affected_validators.join(","))
+        ]));
     }
 
     // call slashing and return new exchange rate
@@ -413,6 +469,67 @@ pub fn execute_slashing(mut deps: DepsMut, env: Env) -> StdResult<Response> {
         ),
     ]))
 }
+
+
+// let a =   update_balances_for_slash(
+//     deps.storage,
+//     staker_address,
+//     slash_percentage,
+//     validator_address,
+//     env.block.time.seconds(),
+//     env.block.height,
+// );
+
+// Function to handle slashing events
+pub fn update_balances_for_slash(
+    storage: &mut dyn Storage,
+    staker: &str,
+    slash_percentage: Decimal,
+    validator: String,
+    timestamp: u64,
+    block_height: u64,
+) -> Result<(), BalanceError> {
+    let old_info = STAKERINFO_NEW.load(storage, staker)
+        .map_err(|_| BalanceError::StakerNotFound {})?;
+
+    // Calculate slashed amounts
+    let nibi_slashed = old_info.amount_staked_unibi * slash_percentage;
+    let stnibi_adjusted = old_info.amount_stnibi_balance * slash_percentage;
+
+    // Update staker info
+    let new_info = StakerInfo {
+        amount_staked_unibi: old_info.amount_staked_unibi.checked_sub(nibi_slashed)
+            .map_err(|_| BalanceError::NegativeBalance {})?,
+        amount_stnibi_balance: old_info.amount_stnibi_balance.checked_sub(stnibi_adjusted)
+            .map_err(|_| BalanceError::NegativeBalance {})?,
+        ..old_info
+    };
+
+    // Record the slashing event
+    let update_id = LAST_UPDATE_ID
+        .may_load(storage, staker)?
+        .unwrap_or_default() + 1;
+
+    let update = BalanceUpdate {
+        action: BalanceAction::Slash {
+            nibi_slashed,
+            stnibi_adjusted,
+            validator,
+        },
+        timestamp,
+        exchange_rate: Decimal::one(), // Slashing doesn't use exchange rate
+        resulting_nibi_balance: new_info.amount_staked_unibi,
+        resulting_stnibi_balance: new_info.amount_stnibi_balance,
+        block_height,
+    };
+
+    STAKERINFO.save(storage, staker.to_owned(), &new_info)?;
+    BALANCE_UPDATES.save(storage, (staker, update_id), &update)?;
+    LAST_UPDATE_ID.save(storage, staker, &update_id)?;
+
+    Ok(())
+}
+
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
@@ -435,9 +552,206 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::HubBalance{contract_address} => to_binary(&query_hub_balance(deps,contract_address)?),
         QueryMsg::GetUnbondingInfo { user_address } => {
             to_binary(&query_unbonding_info(deps, env, user_address)?)
-        }
+        },
+        QueryMsg::BalanceHistory { staker,start_after,limit } => {
+            to_binary(&query_balance_history(deps,  staker,start_after,limit)?)
+
+        },
+        QueryMsg::BalanceUpdates { staker,start_after,limit } => {
+            to_binary(&query_balance_updates(deps,  staker,start_after,limit)?)
+            
+        },
+        QueryMsg::StakerInfo { staker } => {
+            to_binary(&query_staker_info(deps,  staker)?)
+            
+        },
+        QueryMsg::AllStakers { start_after,limit } => {
+            unimplemented!()
+        },
+
     }
 }
+
+
+pub fn query_balance_updates(
+    deps: Deps,
+    staker: String,
+    start_after: Option<u64>,
+    limit: Option<u64>,
+) -> StdResult<BalanceUpdatesResponse> {
+    let limit = limit.unwrap_or(10).min(30) as usize;
+    
+    let start = start_after.map(|id| Bound::exclusive(id));
+    
+    let updates: Vec<BalanceUpdate> = BALANCE_UPDATES
+        .prefix(&staker)
+        .range(deps.storage, start, None, Order::Descending)
+        .take(limit)
+        .map(|item| item.map(|(_, update)| update))
+        .collect::<StdResult<Vec<_>>>()?;
+
+    let last_update_id = LAST_UPDATE_ID
+        .may_load(deps.storage, &staker)?
+        .unwrap_or_default();
+
+    Ok(BalanceUpdatesResponse {
+        updates,
+        last_update_id,
+    })
+}
+
+
+
+
+pub fn query_staker_info(deps: Deps, staker: String) -> StdResult<StakerInfoResponse> {
+    let info = match STAKERINFO_NEW.may_load(deps.storage, &staker)? {
+        Some(info) => info,
+        None => return Ok(StakerInfoResponse {
+            amount_staked_unibi: Uint128::zero(),
+            amount_stnibi_balance: Uint128::zero(),
+            bonding_time: Uint128::zero(),
+            unbonding_period: None,
+            validator_list: None,
+            last_update_time: 0,
+            total_rewards_earned: None,
+        })
+    };
+
+    // Get last update time from balance updates
+    let last_update_id = LAST_UPDATE_ID
+        .may_load(deps.storage, &staker)?
+        .unwrap_or_default();
+
+    let last_update_time = if last_update_id > 0 {
+        BALANCE_UPDATES
+            .may_load(deps.storage, (&staker, last_update_id))?
+            .map(|update| update.timestamp)
+            .unwrap_or(0)
+    } else {
+        0
+    };
+
+    // Calculate total rewards earned from history
+    let total_rewards = calculate_total_rewards(deps.storage, &staker)?;
+
+    Ok(StakerInfoResponse {
+        amount_staked_unibi: info.amount_staked_unibi,
+        amount_stnibi_balance: info.amount_stnibi_balance,
+        bonding_time: info.bonding_time,
+        unbonding_period: info.unbonding_period,
+        validator_list: info.validator_list,
+        last_update_time,
+        total_rewards_earned: Some(total_rewards),
+    })
+}
+
+// Helper function to calculate total rewards
+fn calculate_total_rewards(storage: &dyn Storage, staker: &str) -> StdResult<Uint128> {
+    let mut total_rewards = Uint128::zero();
+
+    // Iterate through all balance updates
+    let updates: Vec<BalanceUpdate> = BALANCE_UPDATES
+        .prefix(staker)
+        .range(storage, None, None, Order::Ascending)
+        .map(|item| item.map(|(_, update)| update))
+        .collect::<StdResult<Vec<_>>>()?;
+
+    for update in updates {
+        match update.action {
+            BalanceAction::BondRewards { nibi_amount } => {
+                total_rewards += nibi_amount;
+            }
+            _ => {} // Ignore other types of updates
+        }
+    }
+
+    Ok(total_rewards)
+}
+
+
+// pub fn query_all_stakers(
+//     deps: Deps,
+//     start_after: Option<String>,
+//     limit: Option<u32>,x x   
+// ) -> StdResult<AllStakersResponse> {
+//     let limit = limit.unwrap_or(10).min(30) as usize;
+    
+//     let start = start_after.map(|addr| Bound::exclusive(addr.as_bytes()));
+    
+//     let stakers: Vec<StakerSummary> = STAKERINFO
+//         .range(deps.storage, start, None, Order::Ascending)
+//         .take(limit)
+//         .map(|item| {
+//             let (address, info) = item?;
+//             Ok(StakerSummary {
+//                 address: String::from_utf8(address)?,
+//                 staked_unibi: info.amount_staked_unibi,
+//                 stnibi_balance: info.amount_stnibi_balance,
+//             })
+//         })
+//         .collect::<StdResult<Vec<_>>>()?;
+
+//     // Count total stakers - Note: This might be expensive for large numbers
+//     let total_stakers = STAKERINFO
+//         .range(deps.storage, None, None, Order::Ascending)
+//         .count() as u64;
+
+//     Ok(AllStakersResponse {
+//         stakers,
+//         total_stakers,
+//     })
+// }
+
+// query balances
+pub fn query_balance_history(
+    deps: Deps,
+    staker:String,
+    start_after: Option<u64>,
+    limit: Option<u64>,
+) -> StdResult<BalanceHistory> {
+    let limit = limit.unwrap_or(10).min(30) as usize;
+    
+    let updates: Vec<BalanceUpdate> = {
+        let bound = match start_after {
+            Some(id) => Some(Bound::exclusive(id)),
+            None => None
+        };
+
+        BALANCE_UPDATES
+            .prefix(&staker)
+            .range(deps.clone().storage, bound, None, Order::Descending)
+            .take(limit)
+            .map(|item| {
+                let (_, update) = item?;
+                Ok(update)
+            })
+            .collect::<StdResult<Vec<_>>>()?
+    };
+
+    let mut total_bonded = Uint128::zero();
+    let mut total_unbonded = Uint128::zero();
+    let current_info = STAKERINFO_NEW.load(deps.storage, &staker)?;
+
+    for update in updates.iter() {
+        match &update.action {
+            BalanceAction::Bond { nibi_amount, .. } => {
+                total_bonded += nibi_amount;
+            },
+            BalanceAction::Unbond { nibi_unbonded, .. } => {
+                total_unbonded += nibi_unbonded;
+            },
+            _ => {}
+        }
+    }
+
+    Ok(BalanceHistory {
+        updates,
+        total_bonded,
+        total_unbonded,
+        current_stnibi: current_info.amount_stnibi_balance,
+    })
+}
+
 
 
 fn query_delegation(deps:Deps,delegator:String) -> StdResult<Vec<Delegation>> {
@@ -464,8 +778,15 @@ fn query_hub_balance(deps:Deps,contract_address:String) -> StdResult<Uint128> {
 
 fn query_staker(deps:Deps,staker:String) -> StdResult<StakerInfo>{
     let restake = STAKERINFO.may_load(deps.storage, staker.clone()).unwrap();
-    
-    Ok(restake.unwrap())
+    match restake{
+        Some(data) =>{
+            return Ok(data);
+        },
+        None=>{
+            return Err(cosmwasm_std::StdError::generic_err("non staker called"));
+        }
+    }
+   
 }
 
 
@@ -509,9 +830,12 @@ fn query_state(deps: Deps, env: Env) -> StdResult<StateResponse> {
         prev_hub_balance: state.prev_hub_balance,
         last_unbonded_time: state.last_unbonded_time,
         last_processed_batch: state.last_processed_batch,
+        total_stnibi_burned:state.total_stnibi_burned
     };
     Ok(res)
 }
+
+
 
 fn query_current_batch(deps: Deps) -> StdResult<CurrentBatchResponse> {
     let current_batch = CURRENT_BATCH.load(deps.storage)?;
@@ -647,14 +971,14 @@ pub fn query_unbonding_info(deps: Deps, env: Env, user_address: String) -> StdRe
 /// 1. Contract Level:
 ///    - Configurable through `params.unbonding_period`
 ///    - Controls when users can withdraw from the contract
-///    - Can be set to any value including 0
+///    - Can be set to any value including 0 // 
 /// 
 /// 2. Protocol Level (Cosmos SDK):
 ///    - Fixed 21-day unbonding period
 ///    - Hardcoded in the Cosmos SDK staking module
 ///    - Cannot be modified by contracts or the chain
 ///    - Required for network security
-/// 
+///     
 /// The effective unbonding period will always be at least 21 days due to 
 /// the protocol-level requirement, regardless of contract settings.
 /// 

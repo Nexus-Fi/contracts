@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use cosmwasm_std::{from_slice, to_vec, Order, StdError, StdResult, Storage, Uint128};
+use cosmwasm_std::{from_slice, to_vec, Decimal, Order, StdError, StdResult, Storage, Uint128};
 use cosmwasm_storage::{Bucket, PrefixedStorage, ReadonlyBucket, ReadonlyPrefixedStorage};
 use nexus_validator_registary::registry::ValidatorResponse;
 use cw_storage_plus::{Item, Map};
@@ -22,6 +22,8 @@ use basset::hub::{
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+use crate::error::BalanceError;
 pub const CONFIG: Item<Config> = Item::new("config");
 pub const STAKERINFO:Map<String, StakerInfo> = Map::new("stakerInfo");
 pub const PARAMETERS: Item<Parameters> = Item::new("parameters");
@@ -41,7 +43,11 @@ pub static PREFIX_REWARD: &[u8] = b"reward_v3";
 pub const MAX_DEFAULT_RANGE_LIMIT: u32 = 1000;
 pub static PREFIX_POOL_INFO: &[u8] = b"pool_info_v3";
 
-
+// Storage
+pub const STAKERINFO_NEW: Map<&str, StakerInfo> = Map::new("staker_info");
+// pub const BALANCE_UPDATES: Map<(&str, u64), BalanceUpdate> = Map::new("balance_updates");
+pub const LAST_UPDATE_ID: Map<&str, u64> = Map::new("last_update_id");
+pub const BALANCE_UPDATES: Map<(&str, u64), BalanceUpdate> = Map::new("balance_updates");
 // #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 // pub struct StakerInfo {
 //     pub amount_staked_unibi: Uint128,
@@ -51,6 +57,69 @@ pub static PREFIX_POOL_INFO: &[u8] = b"pool_info_v3";
 //     pub validator_list:Vec<ValidatorResponse>
 // }
 
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub enum BalanceAction {
+    Bond {
+        nibi_amount: Uint128,
+        stnibi_minted: Uint128,
+        validator: Option<String>,
+    },
+    BondRewards {
+        nibi_amount: Uint128,
+    },
+    Unbond {
+        stnibi_burned: Uint128,
+        nibi_unbonded: Uint128,
+        batch_id: u64,
+    },
+    Slash {
+        nibi_slashed: Uint128,
+        stnibi_adjusted: Uint128,
+        validator: String,
+    },
+    WithdrawUnbonded {
+        nibi_amount: Uint128,
+        batch_id: u64,
+    },
+}
+
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq,JsonSchema)]
+pub struct BalanceUpdate {
+    pub action: BalanceAction,
+    pub timestamp: u64,
+    pub exchange_rate: Decimal,
+    pub resulting_nibi_balance: Uint128,
+    pub resulting_stnibi_balance: Uint128,
+    pub block_height: u64,
+}
+
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct BalanceUpdatesResponse {
+    pub updates: Vec<BalanceUpdate>,
+    pub last_update_id: u64,
+}
+
+
+// Query responses
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct BalanceHistory {
+    pub updates: Vec<BalanceUpdate>,
+    pub total_bonded: Uint128,
+    pub total_unbonded: Uint128,
+    pub current_stnibi: Uint128,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct StakingStats {
+    pub total_staked_all_time: Uint128,
+    pub total_unbonded_all_time: Uint128,
+    pub largest_stake: Uint128,
+    pub latest_exchange_rate: Decimal,
+    pub last_action_time: u64,
+}
 
 
 /// Store undelegation wait list per each batch
@@ -114,6 +183,45 @@ pub fn get_unbond_requests(storage: &dyn Storage, sender_addr: String) -> StdRes
         requests.push((user_batch, value.stnibi_amount))
     }
     Ok(requests)
+}
+
+
+
+pub fn validate_balance_update( 
+    old_info: &StakerInfo,
+    nibi_change: Uint128,
+    stnibi_change: Uint128,
+    is_increase: bool,
+    timestamp: u64,
+    exchange_rate: Decimal,
+) -> Result<(), BalanceError>  {
+      // Validate timestamp
+      if timestamp < old_info.last_update_time {
+        return Err(BalanceError::InvalidTimestamp {});
+    }
+
+    // Validate exchange rate
+    if exchange_rate.is_zero() {
+        return Err(BalanceError::ZeroExchangeRate {});
+    }
+
+     // Check for sufficient balance on decrease
+     if !is_increase {
+        if nibi_change > old_info.amount_staked_unibi {
+            return Err(BalanceError::InsufficientBalance {
+                required: nibi_change,
+                available: old_info.amount_staked_unibi,
+            });
+        }
+        if stnibi_change > old_info.amount_stnibi_balance {
+            return Err(BalanceError::InsufficientBalance {
+                required: stnibi_change,
+                available: old_info.amount_stnibi_balance,
+            });
+        }
+    }
+
+    Ok(())
 }
 
 /// Return all requested unbond amount.

@@ -25,9 +25,9 @@ pub struct InstantiateMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, Default)]
 pub struct State {
     #[serde(skip_serializing, skip_deserializing)]
-    pub total_stnibi_issued: Uint128,
+    pub total_stnibi_issued: Uint128,  // tvl 
     pub stnibi_exchange_rate: Decimal,
-    pub total_bond_stnibi_amount: Uint128,
+    pub total_bond_stnibi_amount: Uint128, // burned 
     pub prev_hub_balance: Uint128,
     pub last_unbonded_time: u64,
     pub last_processed_batch: u64,
@@ -47,8 +47,10 @@ pub struct StakerInfo {
     pub amount_stnibi_balance: Uint128,
     pub bonding_time:Uint128,
     pub unbonding_period:Option<Uint128>,
-    pub validator_list:Option<Vec<ValidatorResponse>>
+    pub validator_list:Option<Vec<ValidatorResponse>>,
+    pub last_update_time: u64,
 }
+
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct ValidatorResponse {
@@ -227,7 +229,10 @@ pub struct StateResponse {
     pub prev_hub_balance: Uint128,
     pub last_unbonded_time: u64,
     pub last_processed_batch: u64,
+   pub total_stnibi_burned:Uint128
 }
+
+
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct ConfigResponse {
@@ -289,7 +294,11 @@ pub enum QueryMsg {
     Staker{staker:String},
     DelegationData{delegator:String},
     HubBalance{contract_address:String},
-    GetUnbondingInfo { user_address: String }
+    GetUnbondingInfo { user_address: String },
+    BalanceHistory{staker:String,start_after:Option<u64>,limit:Option<u64>},
+    BalanceUpdates{staker:String,start_after:Option<u64>,limit:Option<u64>},
+    StakerInfo{staker:String},
+    AllStakers{start_after:Option<u64>,limit:Option<u64>}
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -323,4 +332,15 @@ pub fn is_paused(deps: Deps, hub_addr: String) -> StdResult<bool> {
     }))?;
 
     Ok(params.paused.unwrap_or(false))
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct StakerInfoResponse {
+    pub amount_staked_unibi: Uint128,
+    pub amount_stnibi_balance: Uint128,
+    pub bonding_time: Uint128,
+    pub unbonding_period: Option<Uint128>,
+    pub validator_list: Option<Vec<ValidatorResponse>>,
+    pub last_update_time: u64,
+    pub total_rewards_earned: Option<Uint128>,
 }

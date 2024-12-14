@@ -13,12 +13,13 @@
 // limitations under the License.
 
 use crate::contract::slashing;
+use crate::error::BalanceError;
 use crate::state::{
-    get_finished_amount, read_unbond_history, remove_unbond_wait_list, store_unbond_history, store_unbond_wait_list, CONFIG, CURRENT_BATCH, PARAMETERS, STAKERINFO, STATE, TOKEN_SUPPLY
+    get_finished_amount, read_unbond_history, remove_unbond_wait_list, store_unbond_history, store_unbond_wait_list, validate_balance_update, BalanceAction, BalanceUpdate, BALANCE_UPDATES, CONFIG, CURRENT_BATCH, LAST_UPDATE_ID, PARAMETERS, STAKERINFO, STAKERINFO_NEW, STATE, TOKEN_SUPPLY
 };
-use basset::hub::{CurrentBatch, State, UnbondHistory};
+use basset::hub::{CurrentBatch, StakerInfo, State, UnbondHistory, COSMOS_UNBONDING_PERIOD};
 use cosmwasm_std::{
-    attr, coin, coins, to_binary, BankMsg, CosmosMsg, Decimal, Decimal256, DepsMut, Env, MessageInfo, Response, StakingMsg, StdError, StdResult, Storage, Uint128, Uint256, WasmMsg
+    attr, coin, coins, to_binary, BankMsg, CosmosMsg, Decimal, Decimal256, DepsMut, Env, MessageInfo, Order, Response, StakingMsg, StdError, StdResult, Storage, Uint128, Uint256, WasmMsg
 };
 
 use cw20::Cw20ExecuteMsg;
@@ -37,7 +38,7 @@ pub fn execute_withdraw_unbonded(
     if params.paused.unwrap_or(false) {
         return Err(StdError::generic_err("The contract is temporarily paused"));
     }
-    let sender_human = info.sender;
+    let sender_human = info.clone().sender;
     let contract_address = env.contract.address.clone();
     let unbonding_period = params.unbonding_period;
     let coin_denom = params.underlying_coin_denom;
@@ -64,7 +65,7 @@ pub fn execute_withdraw_unbonded(
     }
 
     // remove the previous batches for the user
-    remove_unbond_wait_list(deps.storage, deprecated_batches, sender_human.to_string())?;
+    remove_unbond_wait_list(deps.storage, deprecated_batches.clone(), sender_human.to_string())?;
 
     // Update previous balance used for calculation in next Atom batch release
     let prev_balance = hub_balance.checked_sub(withdraw_amount)?;
@@ -72,6 +73,28 @@ pub fn execute_withdraw_unbonded(
         last_state.prev_hub_balance = prev_balance;
         Ok(last_state)
     })?;
+
+    for batch_id in &deprecated_batches {
+      let a=   update_balances_for_withdraw(
+            deps.storage,
+            info.sender.as_str(),
+            withdraw_amount.multiply_ratio(1u128, deprecated_batches.len() as u128), // Split amount across batches
+            *batch_id,
+            env.block.time.seconds(),
+            env.block.height,
+        );
+    }
+
+
+    // let a = update_balances_for_withdraw(
+    //     deps.storage,
+    //     info.sender.as_str(),
+    //     withdraw_amount,
+    //     deprecated_batches[0], // or combine multiple batches if needed
+    //     env.block.time.seconds(),
+    //     env.block.height,
+    // );
+
 
     // Send the money to the user
     let msgs: Vec<CosmosMsg> = vec![BankMsg::Send {
@@ -89,6 +112,11 @@ pub fn execute_withdraw_unbonded(
 }
  
  
+
+
+
+
+
 
 fn calculate_newly_added_unbonded_amount(
     storage: &mut dyn Storage,
@@ -361,6 +389,16 @@ pub(crate) fn execute_unbond_stnibi(
 
      state.total_stnibi_burned = state.total_stnibi_burned + amount;
 
+   let a =  update_balances_for_unbond(
+        deps.storage,
+        &sender,
+        amount,
+        state.stnibi_exchange_rate,
+        env.block.time.seconds(),
+        env.block.height,
+        current_batch.id,
+    );
+
      STATE.save(deps.storage, &state)?;
 
      let subdenom = "";
@@ -425,3 +463,158 @@ fn process_undelegations(
 
     Ok(undelegated_msgs)
 }
+
+
+
+
+// Function to handle unbonding operations
+pub fn update_balances_for_unbond(
+    storage: &mut dyn Storage,
+    staker: &str,
+    stnibi_amount: Uint128,
+    exchange_rate: Decimal,
+    timestamp: u64,
+    block_height: u64,
+    batch_id: u64,
+) -> Result<(), BalanceError> {
+    let old_info = STAKERINFO_NEW.load(storage, staker)
+        .map_err(|_| BalanceError::StakerNotFound {})?;
+    
+    let nibi_unbonding = stnibi_amount * exchange_rate;
+
+    // Validate the update
+    validate_balance_update(
+        &old_info,
+        nibi_unbonding,
+        stnibi_amount,
+        false,
+        timestamp,
+        exchange_rate,
+    )?;
+
+    
+    // Update staker info
+    let new_info = StakerInfo {
+        amount_staked_unibi: old_info.amount_staked_unibi,
+        amount_stnibi_balance: old_info.amount_stnibi_balance.checked_sub(stnibi_amount)
+            .map_err(|_| BalanceError::InsufficientBalance {
+                required: stnibi_amount,
+                available: old_info.amount_stnibi_balance,
+            })?,
+        unbonding_period: Some(Uint128::from(COSMOS_UNBONDING_PERIOD)),
+        ..old_info
+    };
+
+    // Record the update
+    let update_id = LAST_UPDATE_ID
+        .may_load(storage, staker)?
+        .unwrap_or_default() + 1;
+
+    let update = BalanceUpdate {
+        action: BalanceAction::Unbond {
+            stnibi_burned: stnibi_amount,
+            nibi_unbonded: nibi_unbonding,
+            batch_id,
+        },
+        timestamp,
+        exchange_rate,
+        resulting_nibi_balance: new_info.amount_staked_unibi,
+        resulting_stnibi_balance: new_info.amount_stnibi_balance,
+        block_height,
+    };
+
+    STAKERINFO.save(storage, staker.to_owned(), &new_info)?;
+    BALANCE_UPDATES.save(storage, (staker, update_id), &update)?;
+    LAST_UPDATE_ID.save(storage, staker, &update_id)?;
+
+    Ok(())
+}
+
+
+// Function to handle withdrawal of unbonded tokens
+pub fn update_balances_for_withdraw(
+    storage: &mut dyn Storage,
+    staker: &str,
+    nibi_amount: Uint128,
+    batch_id: u64,
+    timestamp: u64,
+    block_height: u64,
+) -> Result<(), BalanceError> {
+    let old_info = STAKERINFO.load(storage, staker.to_owned())
+        .map_err(|_| BalanceError::StakerNotFound {})?;
+
+    // No need to update staked balances as they were already updated during unbonding
+    // Just record the withdrawal for history
+    let update_id = LAST_UPDATE_ID
+        .may_load(storage, staker)?
+        .unwrap_or_default() + 1;
+
+    let update = BalanceUpdate {
+        action: BalanceAction::WithdrawUnbonded {
+            nibi_amount,
+            batch_id,
+        },
+        timestamp,
+        exchange_rate: Decimal::one(), // Withdrawal doesn't use exchange rate
+        resulting_nibi_balance: old_info.amount_staked_unibi-nibi_amount,
+        resulting_stnibi_balance: old_info.amount_stnibi_balance,
+        block_height,
+    };
+
+    // Clear unbonding period if no more unbonding tokens
+    let new_info = if old_info.amount_stnibi_balance.is_zero() {
+        StakerInfo {
+            unbonding_period: None,
+            ..old_info
+        }
+    } else {
+        old_info
+    };
+
+    STAKERINFO_NEW.save(storage, staker, &new_info)?;
+    BALANCE_UPDATES.save(storage, (staker, update_id), &update)?;
+    LAST_UPDATE_ID.save(storage, staker, &update_id)?;
+
+    Ok(())
+}
+
+
+
+// Helper function to check if a user has unbonding in progress
+pub fn has_active_unbonding(
+    storage: &dyn Storage,
+    staker: &str,
+) -> StdResult<bool> {
+    let info = STAKERINFO.load(storage, staker.to_owned())?;
+    Ok(info.unbonding_period.is_some())
+}
+
+// Function to get total unbonding amount for a user
+pub fn get_total_unbonding(
+    storage: &dyn Storage,
+    staker: &str,
+    current_timestamp: u64,
+) -> StdResult<(Uint128, Vec<(u64, Uint128)>)> {
+    let mut total_unbonding = Uint128::zero();
+    let mut unbonding_batches = vec![];
+
+    // Get recent updates that are unbonding
+    let updates: Vec<(u64, BalanceUpdate)> = BALANCE_UPDATES
+        .prefix(staker)
+        .range(storage, None, None, Order::Descending)
+        .take(30) // Limit to recent history
+        .collect::<StdResult<Vec<_>>>()?;
+
+    for (_, update) in updates {
+        if let BalanceAction::Unbond { nibi_unbonded, batch_id, .. } = update.action {
+            // Check if still within unbonding period
+            if update.timestamp + COSMOS_UNBONDING_PERIOD > current_timestamp {
+                total_unbonding += nibi_unbonded;
+                unbonding_batches.push((batch_id, nibi_unbonded));
+            }
+        }
+    }
+
+    Ok((total_unbonding, unbonding_batches))
+}
+

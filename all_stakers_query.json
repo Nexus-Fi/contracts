@@ -1,0 +1,7 @@
+{
+    "all_stakers": {
+      "start_after": "<OPTIONAL_START_AFTER>",
+      "limit": "<OPTIONAL_LIMIT>"
+    }
+  }
+  

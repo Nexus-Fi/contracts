@@ -13,11 +13,12 @@
 // limitations under the License.
 
 use crate::contract::slashing;
+use crate::error::BalanceError;
 use crate::math::decimal_division;
-use crate::state::{ CONFIG, CURRENT_BATCH, PARAMETERS, STAKERINFO, STATE, TOKEN_SUPPLY};
+use crate::state::{ validate_balance_update, BalanceAction, BalanceUpdate, BALANCE_UPDATES, CONFIG, CURRENT_BATCH, LAST_UPDATE_ID, PARAMETERS, STAKERINFO, STAKERINFO_NEW, STATE, TOKEN_SUPPLY};
 use basset::hub::{BondType, Parameters,StakerInfo};
 use cosmwasm_std::{
-    attr, to_binary, Coin, CosmosMsg, DepsMut, Env, MessageInfo, QueryRequest, Response, StakingMsg, StdError, StdResult, Uint128, Uint256, WasmMsg, WasmQuery
+    attr, to_binary, Coin, CosmosMsg, Decimal, DepsMut, Env, MessageInfo, QueryRequest, Response, StakingMsg, StdError, StdResult, Storage, Uint128, Uint256, WasmMsg, WasmQuery
 };
 use cw20::Cw20ExecuteMsg;
 use nexus_validator_registary::common::calculate_delegations;
@@ -69,7 +70,7 @@ pub fn execute_bond(
         let time = env.clone().block.time.seconds();
 
     // check slashing
-    let state = slashing(&mut deps, env)?;
+    let state = slashing(&mut deps, env.clone())?;
 
     let sender = info.sender.clone();
 
@@ -83,6 +84,20 @@ pub fn execute_bond(
 
     // total supply should be updated for exchange rate calculation.
     total_supply += mint_amount;
+
+
+    let a = update_balances_for_bond(
+        deps.storage,
+        info.sender.as_str(),
+        payment.amount,
+        mint_amount,
+        env.clone().block.time.seconds(),
+        state.stnibi_exchange_rate,
+        env.block.height,
+        None, // or pass validator if you have it
+    );
+    
+
 
     // exchange rate should be updated for future
     STATE.update(deps.storage, |mut prev_state| -> StdResult<_> {
@@ -128,7 +143,7 @@ pub fn execute_bond(
             amount: Coin::new(delegations[i].u128(), payment.denom.as_str()),
         }));
     }
-
+    
     // we don't need to mint stnibi when bonding rewards
     if bond_type == BondType::BondRewards {
         let res = Response::new()
@@ -190,6 +205,7 @@ pub fn execute_bond(
                     bonding_time: time.into(),
                     unbonding_period:None,
                     validator_list: None,
+                    last_update_time:0 // need to update
                 }
             }
     
@@ -205,4 +221,163 @@ pub fn execute_bond(
                 attr("minted", mint_amount),
             ]);
         Ok(res)
+}
+
+
+
+
+// Enhanced update functions with validation
+pub fn update_balances_for_bond(
+    storage: &mut dyn Storage,
+    staker: &str,
+    nibi_amount: Uint128,
+    stnibi_amount: Uint128,
+    timestamp: u64,
+    exchange_rate: Decimal,
+    block_height: u64,
+    validator: Option<String>,
+) -> Result<(), BalanceError> {
+    let old_info = STAKERINFO_NEW.may_load(storage, staker)
+        .map_err(|_| BalanceError::StakerNotFound {})?;
+
+    match old_info{
+        Some(data) =>{
+            // Validate the update
+                validate_balance_update(
+                    &data,
+                    nibi_amount,
+                    stnibi_amount,
+                    true,
+                    timestamp,
+                    exchange_rate,
+                )?;
+
+                let new_info = StakerInfo {
+                    amount_staked_unibi: data.amount_staked_unibi + nibi_amount,
+                    amount_stnibi_balance: data.amount_stnibi_balance + stnibi_amount,
+                    bonding_time: data.bonding_time,
+                    unbonding_period: data.unbonding_period,
+                    validator_list: data.validator_list,
+                    last_update_time: timestamp,
+                };
+
+                let update_id = LAST_UPDATE_ID
+        .may_load(storage, staker)?
+        .unwrap_or_default() + 1;
+
+        let update = BalanceUpdate {
+            action: BalanceAction::Bond {
+                nibi_amount,
+                stnibi_minted: stnibi_amount,
+                validator,
+            },
+            timestamp,
+            exchange_rate,
+            resulting_nibi_balance: new_info.amount_staked_unibi,
+            resulting_stnibi_balance: new_info.amount_stnibi_balance,
+            block_height,
+        };
+       let _=  STAKERINFO_NEW.save(storage, staker, &new_info)?;
+        BALANCE_UPDATES.save(storage, (staker, update_id), &update)?;
+        LAST_UPDATE_ID.save(storage, staker, &update_id)?;
+
+        },
+        None=>{
+          let staker_info =  StakerInfo{
+                amount_staked_unibi: nibi_amount,
+                amount_stnibi_balance: stnibi_amount,
+                bonding_time: timestamp.into(),
+                unbonding_period:None,
+                validator_list: None,
+                last_update_time:0 // need to update
+            };
+
+            let update_id = LAST_UPDATE_ID
+            .may_load(storage, staker)?
+            .unwrap_or_default() + 1;
+        let update = BalanceUpdate {
+            action: BalanceAction::Bond {
+                nibi_amount,
+                stnibi_minted: stnibi_amount,
+                validator,
+            },
+            timestamp,
+            exchange_rate,
+            resulting_nibi_balance: staker_info.amount_staked_unibi,
+            resulting_stnibi_balance: staker_info.amount_stnibi_balance,
+            block_height,
+        };
+       let _=  STAKERINFO_NEW.save(storage, staker, &staker_info)?;
+        BALANCE_UPDATES.save(storage, (staker, update_id), &update)?;
+        LAST_UPDATE_ID.save(storage, staker, &update_id)?;
+
+        }
+    }
+
+    
+    // // Validate the update
+    // validate_balance_update(
+    //     &old_info,
+    //     nibi_amount,
+    //     stnibi_amount,
+    //     true,
+    //     timestamp,
+    //     exchange_rate,
+    // )?;
+
+    // Update staker info
+    
+
+    // Record the update
+    
+
+    
+  
+
+    Ok(())
+}
+
+
+
+// Migration function
+pub fn migrate_staker_balances(
+    storage: &mut dyn Storage,
+    staker: &str,
+    old_info: StakerInfo,
+    block_height: u64,
+    timestamp: u64,
+) -> StdResult<Response> {
+    let new_info = StakerInfo {
+        amount_staked_unibi: old_info.amount_staked_unibi,
+        amount_stnibi_balance: old_info.amount_stnibi_balance,
+        bonding_time: old_info.bonding_time,
+        unbonding_period: old_info.unbonding_period,
+        validator_list: old_info.validator_list,
+        last_update_time: timestamp,
+    };
+
+    // Create initial balance update record
+    let update = BalanceUpdate {
+        action: BalanceAction::Bond {
+            nibi_amount: old_info.amount_staked_unibi,
+            stnibi_minted: old_info.amount_stnibi_balance,
+            validator: None,
+        },
+        timestamp,
+        exchange_rate: Decimal::one(), // Use current exchange rate if available
+        resulting_nibi_balance: old_info.amount_staked_unibi,
+        resulting_stnibi_balance: old_info.amount_stnibi_balance,
+        block_height,
+    };
+
+    STAKERINFO.save(storage, staker.to_owned(), &new_info)?;
+    BALANCE_UPDATES.save(storage, (staker, 1), &update)?;
+    LAST_UPDATE_ID.save(storage, staker, &1u64)?;
+
+    Ok(Response::new().add_attributes(vec![
+        attr("action", "migrate_staker_balance"),
+        attr("staker", staker),
+        attr("nibi_balance", old_info.amount_staked_unibi),
+        attr("stnibi_balance", old_info.amount_stnibi_balance),
+    ]))
 }

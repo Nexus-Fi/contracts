@@ -4,7 +4,7 @@
     "decimals":6,
     "initial_balances":[
         {
-          "address": "nibi1j69w9w934pp5kml5ex2y0xw9tqmagqnqme95wwzvemtlm9937acs0txxcz",
+          "address": "nibi19dpr3ltx385dujt34hdq8y96xktpxvd3z8ernedjqq40cfr7fmzqq0f0r7",
           "amount": "0"
         },
         {
@@ -12,7 +12,7 @@
             "amount": "0"
         }
     ],
-    "hub_contract":"nibi1j69w9w934pp5kml5ex2y0xw9tqmagqnqme95wwzvemtlm9937acs0txxcz",
+    "hub_contract":"nibi19dpr3ltx385dujt34hdq8y96xktpxvd3z8ernedjqq40cfr7fmzqq0f0r7",
     "marketing":{
         "project":"https://nexusfi.xyz/",
         "description":"Restaking made simple on nibiru",

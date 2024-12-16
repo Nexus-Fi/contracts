@@ -267,3 +267,4 @@ pub fn query_user_rewards(deps: Deps, user_address: String, hub_contract: String
         amount: user_reward_amount,
     })
 }
+

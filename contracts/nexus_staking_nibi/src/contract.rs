@@ -783,9 +783,18 @@ fn query_staker(deps:Deps,staker:String) -> StdResult<StakerInfo>{
             return Ok(data);
         },
         None=>{
-            return Err(cosmwasm_std::StdError::generic_err("non staker called"));
+            let staker_info = StakerInfo{
+                amount_staked_unibi: Uint128::zero(),
+                amount_stnibi_balance:Uint128::zero(),
+                bonding_time:Uint128::zero(),
+                unbonding_period:None,
+                validator_list:None,
+                last_update_time:0
+            };
+            return Ok(staker_info)
         }
     }
+    // return Err(cosmwasm_std::StdError::generic_err("non staker called"));
    
 }
 

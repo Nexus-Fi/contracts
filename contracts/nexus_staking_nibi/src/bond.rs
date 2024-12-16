@@ -95,6 +95,7 @@ pub fn execute_bond(
         state.stnibi_exchange_rate,
         env.block.height,
         None, // or pass validator if you have it
+        &bond_type
     );
     
 
@@ -143,9 +144,11 @@ pub fn execute_bond(
             amount: Coin::new(delegations[i].u128(), payment.denom.as_str()),
         }));
     }
+    let rewards_generated = payment.amount; 
     
     // we don't need to mint stnibi when bonding rewards
     if bond_type == BondType::BondRewards {
+        
         let res = Response::new()
             .add_messages(external_call_msgs)
             .add_attributes(vec![
@@ -236,6 +239,7 @@ pub fn update_balances_for_bond(
     exchange_rate: Decimal,
     block_height: u64,
     validator: Option<String>,
+    bond_type: &BondType
 ) -> Result<(), BalanceError> {
     let old_info = STAKERINFO_NEW.may_load(storage, staker)
         .map_err(|_| BalanceError::StakerNotFound {})?;
@@ -243,6 +247,51 @@ pub fn update_balances_for_bond(
     match old_info{
         Some(data) =>{
             // Validate the update
+            match *bond_type {
+                BondType::BondRewards =>{
+
+                    validate_balance_update(
+                        &data,
+                        nibi_amount,
+                        stnibi_amount,
+                        true,
+                        timestamp,
+                        exchange_rate,
+                    )?;
+    
+                    let new_info = StakerInfo {
+                        amount_staked_unibi: data.amount_staked_unibi + nibi_amount,
+                        amount_stnibi_balance: data.amount_stnibi_balance,
+                        bonding_time: data.bonding_time,
+                        unbonding_period: data.unbonding_period,
+                        validator_list: data.validator_list,
+                        last_update_time: timestamp,
+                    };
+    
+                    let update_id = LAST_UPDATE_ID
+            .may_load(storage, staker)?
+            .unwrap_or_default() + 1;
+        
+            let update = BalanceUpdate {
+                action: BalanceAction::BondRewards {
+                    nibi_amount,
+                },
+                timestamp,
+                exchange_rate,
+                resulting_nibi_balance: new_info.amount_staked_unibi,
+                resulting_stnibi_balance: new_info.amount_stnibi_balance,
+                block_height,
+            };
+           let _=  STAKERINFO_NEW.save(storage, staker, &new_info)?;
+            BALANCE_UPDATES.save(storage, (staker, update_id), &update)?;
+            LAST_UPDATE_ID.save(storage, staker, &update_id)?;
+
+            return Ok(());
+                },
+                BondType::stnibi =>{
+
+                }
+            };
                 validate_balance_update(
                     &data,
                     nibi_amount,
@@ -264,7 +313,7 @@ pub fn update_balances_for_bond(
                 let update_id = LAST_UPDATE_ID
         .may_load(storage, staker)?
         .unwrap_or_default() + 1;
-
+    
         let update = BalanceUpdate {
             action: BalanceAction::Bond {
                 nibi_amount,

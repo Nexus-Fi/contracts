@@ -88,29 +88,6 @@ pub fn instantiate(
 pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> StdResult<Response> {
     match msg {
             ExecuteMsg::Receive(msg) => receive_cw20(deps, env, info, msg),
-            ExecuteMsg::CreateDenom { subdenom } => {
-                let config = CONFIG.load(deps.storage)?;
-                let coin_denom  =config.stnibi_denom ;
-                match coin_denom {
-                    Some(_) =>{
-                        return Err(StdError::GenericErr {
-                            msg: "Denom Already Created".to_string(),
-                        }
-                        .into());
-                    },
-                    None =>{
-
-                    }
-                };
-                let cosmos_msg: CosmosMsg = nibiru::tokenfactory::MsgCreateDenom {
-                    
-                    sender: env.contract.address.into_string(),
-                    subdenom,
-                }
-                .into_stargate_msg();
-                Ok(Response::new()
-                    .add_message(cosmos_msg))
-            }
             ExecuteMsg::BondForstnibi {} => execute_bond(deps, env, info, BondType::stnibi),
             ExecuteMsg::BondRewards {} => execute_bond(deps, env, info, BondType::BondRewards),
             ExecuteMsg::DispatchRewards {} => execute_dispatch_rewards(deps, env, info),
@@ -386,9 +363,12 @@ fn query_actual_state(deps: Deps, env: Env) -> StdResult<State> {
     if state.total_bond_stnibi_amount.u128() > actual_total_bonded.u128() {
         state.total_bond_stnibi_amount = actual_total_bonded;
     }
+    //NOT UPDATING THE EXCHANGE RATE 
     state.update_stnibi_exchange_rate(state.total_stnibi_issued, current_requested_stnibi);
     Ok(state)
 }
+
+
 
 /// Check whether slashing has happened
 /// This is used for checking slashing while bonding or unbonding
@@ -579,6 +559,20 @@ pub fn query_balance_updates(
     start_after: Option<u64>,
     limit: Option<u64>,
 ) -> StdResult<BalanceUpdatesResponse> {
+
+   // First check if staker exists
+   let _ = match STAKERINFO_NEW.may_load(deps.storage, staker.as_str())? {
+    Some(_) => (), // Staker exists, continue
+    None => {
+        // Return empty response for non-existent staker
+        return Ok(BalanceUpdatesResponse {
+            updates: vec![],
+            last_update_id: 0,
+        });
+    }
+};
+
+    
     let limit = limit.unwrap_or(10).min(30) as usize;
     
     let start = start_after.map(|id| Bound::exclusive(id));
@@ -709,6 +703,22 @@ pub fn query_balance_history(
     start_after: Option<u64>,
     limit: Option<u64>,
 ) -> StdResult<BalanceHistory> {
+
+
+    let current_info = match STAKERINFO_NEW.may_load(deps.storage, staker.as_str())? {
+        Some(info) => info,
+        None => {
+            return Ok(BalanceHistory {
+                updates: vec![],
+                total_bonded: Uint128::zero(),
+                total_unbonded: Uint128::zero(),
+                current_stnibi: Uint128::zero(),
+            });
+        }
+    };
+
+    
+
     let limit = limit.unwrap_or(10).min(30) as usize;
     
     let updates: Vec<BalanceUpdate> = {

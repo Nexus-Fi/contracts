@@ -83,11 +83,15 @@ impl State {
         if self.total_bond_stnibi_amount.is_zero() || actual_supply.is_zero() {
             self.stnibi_exchange_rate = Decimal::one()
         } else {
-            self.stnibi_exchange_rate =
-                Decimal::from_ratio(self.total_bond_stnibi_amount, actual_supply);
+            //Not updating the exchange rate
+            self.stnibi_exchange_rate =Decimal::one()
+            
+                // Decimal::from_ratio(self.total_bond_stnibi_amount, actual_supply);
         }
     }
 }
+
+
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -165,8 +169,7 @@ pub enum ExecuteMsg {
     RemoveGuardians {
         addresses: Vec<String>,
     },
-    ///create the token denom
-    CreateDenom { subdenom:String },
+  
     
 }
 

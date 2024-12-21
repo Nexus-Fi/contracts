@@ -22,6 +22,8 @@ pub fn decimal_division(a: Uint128, b: Decimal) -> Uint128 {
     decimal * Uint128::from(DECIMAL_FRACTIONAL)
 }
 
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

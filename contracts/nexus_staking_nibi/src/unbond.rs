@@ -116,8 +116,6 @@ pub fn execute_withdraw_unbonded(
 
 
 
-
-
 fn calculate_newly_added_unbonded_amount(
     storage: &mut dyn Storage,
     last_processed_batch: u64,
@@ -351,7 +349,7 @@ pub(crate) fn execute_unbond_stnibi(
     
      let current_time = env.block.time.seconds();
      let passed_time = current_time - state.last_unbonded_time;
- 
+    
      let mut messages: Vec<CosmosMsg> = vec![];
  
      // If the epoch period is passed, the undelegate message would be sent.
@@ -388,6 +386,11 @@ pub(crate) fn execute_unbond_stnibi(
 
 
      state.total_stnibi_burned = state.total_stnibi_burned + amount;
+
+     let nibi_unbonding = amount * state.stnibi_exchange_rate;
+
+     state.total_bond_stnibi_amount = state.total_bond_stnibi_amount.checked_sub(nibi_unbonding)?;
+
 
    let a =  update_balances_for_unbond(
         deps.storage,
@@ -492,7 +495,7 @@ pub fn update_balances_for_unbond(
         exchange_rate,
     )?;
 
-    
+        
     // Update staker info
     let new_info = StakerInfo {
         amount_staked_unibi: old_info.amount_staked_unibi,
@@ -504,7 +507,7 @@ pub fn update_balances_for_unbond(
         unbonding_period: Some(Uint128::from(COSMOS_UNBONDING_PERIOD)),
         ..old_info
     };
-
+    
     // Record the update
     let update_id = LAST_UPDATE_ID
         .may_load(storage, staker)?

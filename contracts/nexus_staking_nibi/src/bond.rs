@@ -24,7 +24,8 @@ use cw20::Cw20ExecuteMsg;
 use nexus_validator_registary::common::calculate_delegations;
 use nexus_validator_registary::msg::QueryMsg as QueryValidators;
 use nexus_validator_registary::registry::ValidatorResponse;
-use nibiru_std::proto::{cosmos, nibiru, NibiruStargateMsg};
+
+
 
 pub fn execute_bond(
     mut deps: DepsMut,
@@ -144,7 +145,6 @@ pub fn execute_bond(
             amount: Coin::new(delegations[i].u128(), payment.denom.as_str()),
         }));
     }
-    let rewards_generated = payment.amount; 
     
     // we don't need to mint stnibi when bonding rewards
     if bond_type == BondType::BondRewards {

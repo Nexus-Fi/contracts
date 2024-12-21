@@ -1,10 +1,10 @@
 {
     "update_config":{
         "owner":"nibi1hzty850q3vnew33yuft82j0v5fazyvfcescxhs",
-        "rewards_dispatcher_contract":"nibi1m758fffepc76gn3m464y9qjnjn0j4tf7gsuyup6vjkvksd7344zsma2d7l",
-        "validators_registry_contract":"nibi1ej9hvp3qwf9u4plupy3lvhdgfkk65fxxg20tl4afwcsga79w77jswz99pd",
-        "stnibi_denom":"nibi1yvxghhskjtw63hdvqvp89atfd07vjdyf5gjh9mmu44gdt9mlafrq6qs7fj",
-        "stnibi_token_contract":"nibi1yvxghhskjtw63hdvqvp89atfd07vjdyf5gjh9mmu44gdt9mlafrq6qs7fj"
+        "rewards_dispatcher_contract":"nibi1knyym35nwflx96hqa3s6f5m0vjsvxlgyrx29x28akuegm6rpjpfsd53qu7",
+        "validators_registry_contract":"nibi1uks3tduxzmvgpspe627tsdv39fqypl9lwfrms389rj4e5jdzv5fsjx006w",
+        "stnibi_denom":"nibi1zm4xwjrr3cvrrv7z7h4m96z6l8clk0j4xwy5qdqfu7tt4mmf5trs8tktgr",
+        "stnibi_token_contract":"nibi1zm4xwjrr3cvrrv7z7h4m96z6l8clk0j4xwy5qdqfu7tt4mmf5trs8tktgr"
     }
 }
 

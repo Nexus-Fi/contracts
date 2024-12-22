@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use cosmwasm_std::{from_slice, to_vec, Decimal, Order, StdError, StdResult, Storage, Uint128};
+use cosmwasm_std::{from_slice, to_vec, Decimal, Order, Response, StdError, StdResult, Storage, Uint128};
 use cosmwasm_storage::{Bucket, PrefixedStorage, ReadonlyBucket, ReadonlyPrefixedStorage};
 use nexus_validator_registary::registry::ValidatorResponse;
 use cw_storage_plus::{Item, Map};
@@ -57,6 +57,15 @@ pub const BALANCE_UPDATES: Map<(&str, u64), BalanceUpdate> = Map::new("balance_u
 //     pub validator_list:Vec<ValidatorResponse>
 // }
 
+
+pub struct BalanceUpdateData {
+   pub nibi_amount: Uint128,
+    pub stnibi_amount: Uint128,
+   pub timestamp: u64,
+   pub exchange_rate: Decimal,
+   pub block_height: u64,
+   pub  validator: Option<String>,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub enum BalanceAction {
@@ -194,30 +203,24 @@ pub fn validate_balance_update(
     is_increase: bool,
     timestamp: u64,
     exchange_rate: Decimal,
-) -> Result<(), BalanceError>  {
+) -> Result<(), StdError> {
       // Validate timestamp
       if timestamp < old_info.last_update_time {
-        return Err(BalanceError::InvalidTimestamp {});
+        return Err(StdError::generic_err("invalid timestamp"));
     }
 
     // Validate exchange rate
     if exchange_rate.is_zero() {
-        return Err(BalanceError::ZeroExchangeRate {});
+        return Err(StdError::generic_err("invalid exchange rate"));
     }
 
      // Check for sufficient balance on decrease
      if !is_increase {
         if nibi_change > old_info.amount_staked_unibi {
-            return Err(BalanceError::InsufficientBalance {
-                required: nibi_change,
-                available: old_info.amount_staked_unibi,
-            });
+            return Err(StdError::generic_err("Insufficient balance"));
         }
         if stnibi_change > old_info.amount_stnibi_balance {
-            return Err(BalanceError::InsufficientBalance {
-                required: stnibi_change,
-                available: old_info.amount_stnibi_balance,
-            });
+            return Err(StdError::generic_err("Insufficient balance"));
         }
     }
 

@@ -331,9 +331,9 @@ fn withdraw_all_rewards(deps: &DepsMut, delegator: String) -> StdResult<Vec<Cosm
     Ok(messages)
 }
 
-fn query_actual_state(deps: Deps, env: Env) -> StdResult<State> {
+fn query_actual_state(deps: Deps, env: &Env) -> StdResult<State> {
     let mut state = STATE.load(deps.storage)?;
-    let delegations = deps.querier.query_all_delegations(env.contract.address)?;
+    let delegations = deps.querier.query_all_delegations(env.contract.address.clone())?;
     if delegations.is_empty() {
         return Ok(state);
     }
@@ -372,7 +372,7 @@ fn query_actual_state(deps: Deps, env: Env) -> StdResult<State> {
 
 /// Check whether slashing has happened
 /// This is used for checking slashing while bonding or unbonding
-pub fn slashing(deps: &mut DepsMut, env: Env) -> StdResult<State> {
+pub fn slashing(deps: &mut DepsMut, env: &Env) -> StdResult<State> {
     let state = query_actual_state(deps.as_ref(), env)?;
 
     STATE.save(deps.storage, &state)?;
@@ -392,7 +392,7 @@ pub fn execute_slashing(mut deps: DepsMut, env: Env) -> StdResult<Response> {
     let prev_state = STATE.load(deps.storage)?;
     
     // Call slashing to get new state with updated exchange rate
-    let new_state = slashing(&mut deps, env.clone())?;
+    let new_state = slashing(&mut deps, &env)?;
 
     // Calculate slash percentage if exchange rate decreased
     if new_state.stnibi_exchange_rate < prev_state.stnibi_exchange_rate {
@@ -440,7 +440,7 @@ pub fn execute_slashing(mut deps: DepsMut, env: Env) -> StdResult<Response> {
     }
 
     // call slashing and return new exchange rate
-    let state = slashing(&mut deps, env)?;
+    let state = slashing(&mut deps, &env)?;
     Ok(Response::new().add_attributes(vec![
         attr("action", "check_slashing"),
         attr(
@@ -842,7 +842,7 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
 }
 
 fn query_state(deps: Deps, env: Env) -> StdResult<StateResponse> {
-    let state = query_actual_state(deps, env)?;
+    let state = query_actual_state(deps, &env)?;
     let res = StateResponse {
         stnibi_exchange_rate: state.stnibi_exchange_rate,
         total_bond_stnibi_amount: state.total_bond_stnibi_amount,

@@ -340,7 +340,7 @@ pub(crate) fn execute_unbond_stnibi(
      let mut current_batch = CURRENT_BATCH.load(deps.storage)?;
  
      // Check slashing, update state, and calculate the new exchange rate.
-     let mut state = slashing(&mut deps, env.clone())?;
+     let mut state = slashing(&mut deps, &env)?;
  
      // Collect all the requests within a epoch period
      current_batch.requested_stnibi += amount;

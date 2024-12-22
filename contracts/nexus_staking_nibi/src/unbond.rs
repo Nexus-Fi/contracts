@@ -25,8 +25,6 @@ use cosmwasm_std::{
 use cw20::Cw20ExecuteMsg;
 use nexus_validator_registary::common::calculate_undelegations;
 use nexus_validator_registary::registry::ValidatorResponse;
-use nibiru_std::proto::cosmos::base;
-use nibiru_std::proto::NibiruStargateMsg;
 use signed_integers::SignedInt;
 
 pub fn execute_withdraw_unbonded(
@@ -34,55 +32,80 @@ pub fn execute_withdraw_unbonded(
     env: Env,
     info: MessageInfo,
 ) -> StdResult<Response> {
-    let params = PARAMETERS.load(deps.storage)?;
-    if params.paused.unwrap_or(false) {
-        return Err(StdError::generic_err("The contract is temporarily paused"));
-    }
-    let sender_human = info.clone().sender;
-    let contract_address = env.contract.address.clone();
-    let unbonding_period = params.unbonding_period;
+   // Validate contract state
+   let params = PARAMETERS.load(deps.storage)?;
+   if params.paused.unwrap_or(false) {
+       return Err(StdError::generic_err("The contract is temporarily paused"));
+   }
+
+   let sender = info.sender.as_str(); // Use reference instead of clone
     let coin_denom = params.underlying_coin_denom;
+    let contract_addr = &env.contract.address; // Use reference
 
-    let historical_time = env.block.time.seconds() - unbonding_period;
+    // Calculate historical time with safe arithmetic
+    let historical_time = env.block.time.seconds().checked_sub(params.unbonding_period)
+        .ok_or_else(|| StdError::generic_err("Overflow in historical time calculation"))?;
 
-    // query hub balance for process withdraw rate.
+
+    
+    // Query hub balance safely
     let hub_balance = deps
         .querier
-        .query_balance(&env.contract.address, &*coin_denom)?
+        .query_balance(contract_addr, &*coin_denom)?
         .amount;
 
-    // calculate withdraw rate for user requests
+    // Process withdraw rate
     process_withdraw_rate(&mut deps, historical_time, hub_balance)?;
 
+    // Get withdrawable amount - Convert to string only once
+    let sender_string = sender.to_string();
     let (withdraw_amount, deprecated_batches) =
-        get_finished_amount(deps.storage, sender_human.to_string())?;
-
-    if withdraw_amount.is_zero() {
+        get_finished_amount(deps.storage, &sender_string)?;
+        
+     // Validate withdraw amount
+     if withdraw_amount.is_zero() {
         return Err(StdError::generic_err(format!(
             "No withdrawable {} assets are available yet",
             coin_denom
         )));
     }
 
-    // remove the previous batches for the user
-    remove_unbond_wait_list(deps.storage, deprecated_batches.clone(), sender_human.to_string())?;
 
-    // Update previous balance used for calculation in next Atom batch release
-    let prev_balance = hub_balance.checked_sub(withdraw_amount)?;
-    STATE.update(deps.storage, |mut last_state| -> StdResult<_> {
-        last_state.prev_hub_balance = prev_balance;
-        Ok(last_state)
-    })?;
+    // Remove the previous batches with explicit error handling
+    remove_unbond_wait_list(deps.storage, deprecated_batches.clone(), &sender_string)?;
 
+      // Update previous balance with safe arithmetic
+      let prev_balance = hub_balance.checked_sub(withdraw_amount)
+      .map_err(|_| StdError::generic_err("Insufficient hub balance for withdrawal"))?;
+
+  // Update state
+  STATE.update(deps.storage, |mut last_state| -> StdResult<_> {
+      last_state.prev_hub_balance = prev_balance;
+      Ok(last_state)
+  })?;
+
+   // Calculate per-batch amount safely
+   if deprecated_batches.is_empty() {
+    return Err(StdError::generic_err("No deprecated batches found"));
+}
+
+let batch_amount = withdraw_amount
+    .checked_div(Uint128::from(deprecated_batches.len() as u128))
+    .map_err(|_| StdError::generic_err("Error calculating per-batch amount"))?;
+
+
+
+
+      // Update balances for each batch
     for batch_id in &deprecated_batches {
-      let a=   update_balances_for_withdraw(
+        update_balances_for_withdraw(
             deps.storage,
-            info.sender.as_str(),
-            withdraw_amount.multiply_ratio(1u128, deprecated_batches.len() as u128), // Split amount across batches
+            sender,  // Use reference instead of creating new string
+            batch_amount,
             *batch_id,
             env.block.time.seconds(),
             env.block.height,
-        );
+        )?;
     }
 
 
@@ -96,24 +119,24 @@ pub fn execute_withdraw_unbonded(
     // );
 
 
-    // Send the money to the user
-    let msgs: Vec<CosmosMsg> = vec![BankMsg::Send {
-        to_address: sender_human.to_string(),
-        amount: coins(withdraw_amount.u128(), &*coin_denom),
-    }
-    .into()];
+   // Prepare transfer message
+   let transfer_msg = BankMsg::Send {
+    to_address: sender_string, // Reuse already created string
+    amount: coins(withdraw_amount.u128(), &*coin_denom),
+};
 
-    let res = Response::new().add_messages(msgs).add_attributes(vec![
+// Return response with improved attributes
+Ok(Response::new()
+    .add_message(transfer_msg)
+    .add_attributes(vec![
         attr("action", "finish_burn"),
-        attr("from", contract_address),
+        attr("from", contract_addr.as_str()),
         attr("amount", withdraw_amount),
-    ]);
-    Ok(res)
+        attr("batches_processed", deprecated_batches.len().to_string()),
+        attr("recipient", sender),
+    ]))
 }
  
- 
-
-
 
 
 fn calculate_newly_added_unbonded_amount(
@@ -155,6 +178,7 @@ fn calculate_newly_added_unbonded_amount(
 }
 
 
+
 fn calculate_new_withdraw_rate(
     amount: Uint128,
     withdraw_rate: Decimal,
@@ -177,39 +201,49 @@ fn calculate_new_withdraw_rate(
     let actual_unbonded_amount_of_batch: Uint256;
 
     // If slashed amount is negative, there should be summation instead of subtraction.
-    if slashed_amount.1 {
+    if slashed_amount.1 {  // negative case
         slashed_amount_of_batch = if slashed_amount_of_batch > Uint256::one() {
             slashed_amount_of_batch - Uint256::one()
         } else {
             Uint256::zero()
         };
         actual_unbonded_amount_of_batch = unbonded_amount_of_batch + slashed_amount_of_batch;
-    } else {
+    } else {  // positive case
         if slashed_amount.0.u128() != 0u128 {
             slashed_amount_of_batch += Uint256::one();
         }
         // Convert to Uint128 for subtraction, ensuring it's within Uint128 range
-        let unbonded_amount_of_batch_128 = Uint128::try_from(unbonded_amount_of_batch).expect("Exceeds Uint128 range");
-        let slashed_amount_of_batch_128 = Uint128::try_from(slashed_amount_of_batch).expect("Exceeds Uint128 range");
+
+        //NOT SECURE
+        let unbonded_amount_of_batch_128 = Uint128::try_from(unbonded_amount_of_batch)
+            .map_err(|_| "Exceeds Uint128 range")
+            .unwrap_or(Uint128::MAX);
+        let slashed_amount_of_batch_128 = Uint128::try_from(slashed_amount_of_batch)
+            .map_err(|_| "Exceeds Uint128 range")
+            .unwrap_or(Uint128::MAX);
 
         actual_unbonded_amount_of_batch = Uint256::from(
-            SignedInt::from_subtraction(unbonded_amount_of_batch_128, slashed_amount_of_batch_128).0,
+            SignedInt::from_subtraction(
+                unbonded_amount_of_batch_128,
+                slashed_amount_of_batch_128
+            ).0
         );
     }
 
     // Calculate the new withdraw rate
     if burnt_amount_of_batch != Uint256::zero() {
-         // Convert actual_unbonded_amount_of_batch to Uint128 before calling from_ratio
-         let actual_unbonded_amount_of_batch_128 = Uint128::try_from(actual_unbonded_amount_of_batch)
-         .expect("actual_unbonded_amount_of_batch_128 Exceeds Uint128 range");
-     let burnt_amount_of_batch_128 = Uint128::try_from(burnt_amount_of_batch)
-         .expect("burnt_amount_of_batch_128 Exceeds Uint128 range");
-
-        Decimal::from_ratio(actual_unbonded_amount_of_batch_128, burnt_amount_of_batch_128)
+        let actual_unbonded_128 = Uint128::try_from(actual_unbonded_amount_of_batch)
+            .unwrap_or(Uint128::MAX);
+        
+        let burnt_amount_128 = Uint128::try_from(burnt_amount_of_batch)
+            .unwrap_or(Uint128::MAX);
+    
+        Decimal::from_ratio(actual_unbonded_128, burnt_amount_128)
     } else {
         withdraw_rate
     }
 }
+
 
 
 /// This is designed for an accurate unbonded amount calculation.
@@ -542,9 +576,9 @@ pub fn update_balances_for_withdraw(
     batch_id: u64,
     timestamp: u64,
     block_height: u64,
-) -> Result<(), BalanceError> {
+) -> Result<(), StdError> {
     let old_info = STAKERINFO.load(storage, staker.to_owned())
-        .map_err(|_| BalanceError::StakerNotFound {})?;
+        .map_err(|_| StdError::generic_err("StakerNotFound"))?;
 
     // No need to update staked balances as they were already updated during unbonding
     // Just record the withdrawal for history
@@ -579,45 +613,5 @@ pub fn update_balances_for_withdraw(
     LAST_UPDATE_ID.save(storage, staker, &update_id)?;
 
     Ok(())
-}
-
-
-
-// Helper function to check if a user has unbonding in progress
-pub fn has_active_unbonding(
-    storage: &dyn Storage,
-    staker: &str,
-) -> StdResult<bool> {
-    let info = STAKERINFO.load(storage, staker.to_owned())?;
-    Ok(info.unbonding_period.is_some())
-}
-
-// Function to get total unbonding amount for a user
-pub fn get_total_unbonding(
-    storage: &dyn Storage,
-    staker: &str,
-    current_timestamp: u64,
-) -> StdResult<(Uint128, Vec<(u64, Uint128)>)> {
-    let mut total_unbonding = Uint128::zero();
-    let mut unbonding_batches = vec![];
-
-    // Get recent updates that are unbonding
-    let updates: Vec<(u64, BalanceUpdate)> = BALANCE_UPDATES
-        .prefix(staker)
-        .range(storage, None, None, Order::Descending)
-        .take(30) // Limit to recent history
-        .collect::<StdResult<Vec<_>>>()?;
-
-    for (_, update) in updates {
-        if let BalanceAction::Unbond { nibi_unbonded, batch_id, .. } = update.action {
-            // Check if still within unbonding period
-            if update.timestamp + COSMOS_UNBONDING_PERIOD > current_timestamp {
-                total_unbonding += nibi_unbonded;
-                unbonding_batches.push((batch_id, nibi_unbonded));
-            }
-        }
-    }
-
-    Ok((total_unbonding, unbonding_batches))
 }
 

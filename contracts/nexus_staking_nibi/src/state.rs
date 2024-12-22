@@ -156,9 +156,9 @@ pub fn store_unbond_wait_list(
 pub fn remove_unbond_wait_list(
     storage: &mut dyn Storage,
     batch_id: Vec<u64>,
-    sender_address: String,
+    sender_address: &str,
 ) -> StdResult<()> {
-    let addr = to_vec(&sender_address)?;
+    let addr = to_vec(sender_address)?;
     let mut position_indexer: Bucket<UnbondWaitEntity> =
         Bucket::multilevel(storage, &[PREFIX_WAIT_MAP, &addr]);
     for b in batch_id {
@@ -233,9 +233,9 @@ pub fn validate_balance_update(
 /// amount proportional to withdraw rate.
 pub fn get_finished_amount(
     storage: &dyn Storage,
-    sender_addr: String,
+    sender_addr: &str,
 ) -> StdResult<(Uint128, Vec<u64>)> {
-    let vec = to_vec(&sender_addr)?;
+    let vec = to_vec(sender_addr)?;
     let mut withdrawable_amount: Uint128 = Uint128::zero();
     let mut deprecated_batches: Vec<u64> = vec![];
     let res: ReadonlyBucket<UnbondWaitEntity> =

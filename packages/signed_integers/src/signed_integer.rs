@@ -30,6 +30,7 @@ impl SignedInt {
         minuend: A,
         subtrahend: B,
     ) -> SignedInt {
+        
         let minuend: Uint128 = minuend.into();
         let subtrahend: Uint128 = subtrahend.into();
         let subtraction = minuend.checked_sub(subtrahend);

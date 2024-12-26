@@ -227,6 +227,7 @@ pub struct UnbondWaitEntity {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct StateResponse {
+    pub total_stnibi_issued:Uint128,
     pub stnibi_exchange_rate: Decimal,
     pub total_bond_stnibi_amount: Uint128,
     pub prev_hub_balance: Uint128,
@@ -301,7 +302,8 @@ pub enum QueryMsg {
     BalanceHistory{staker:String,start_after:Option<u64>,limit:Option<u64>},
     BalanceUpdates{staker:String,start_after:Option<u64>,limit:Option<u64>},
     StakerInfo{staker:String},
-    AllStakers{start_after:Option<u64>,limit:Option<u64>}
+    AllStakers{start_after:Option<u64>,limit:Option<u64>},
+    TotalSupply{}
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

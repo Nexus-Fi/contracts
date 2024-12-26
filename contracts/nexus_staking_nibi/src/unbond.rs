@@ -367,6 +367,11 @@ pub(crate) fn execute_unbond_stnibi(
     amount: Uint128,
     sender: String,
 ) -> StdResult<Response> {
+    if amount.is_zero() {
+        return Err(StdError::generic_err("Cannot unbond zero tokens"));
+    }
+
+
      // Read params
      let params = PARAMETERS.load(deps.storage)?;
      let epoch_period = params.epoch_period;
@@ -419,14 +424,21 @@ pub(crate) fn execute_unbond_stnibi(
      }));
 
 
-     state.total_stnibi_burned = state.total_stnibi_burned + amount;
+     state.total_stnibi_burned = state.total_stnibi_burned.checked_add(amount)
+     .or_else(|a| Err(StdError::generic_err("Overflow in total burned amount")))?;
 
-     let nibi_unbonding = amount * state.stnibi_exchange_rate;
+//  let nibi_unbonding = amount.checked_mul(state.stnibi_exchange_rate)
+//      .or_else(|a| Err(StdError::generic_err("Overflow in unbonding calculation")))?;
+//      state.total_bond_stnibi_amount = state.total_bond_stnibi_amount.checked_sub(nibi_unbonding)?;
 
-     state.total_bond_stnibi_amount = state.total_bond_stnibi_amount.checked_sub(nibi_unbonding)?;
+// So the full code should be:
+let nibi_unbonding = state.stnibi_exchange_rate * amount;
+state.total_bond_stnibi_amount = state.total_bond_stnibi_amount.checked_sub(nibi_unbonding)
+    .or_else(|a| Err(StdError::generic_err("Insufficient bond amount")))?;
 
-
-   let a =  update_balances_for_unbond(
+    
+    // Handle the update_balances_for_unbond result
+    update_balances_for_unbond(
         deps.storage,
         &sender,
         amount,
@@ -434,25 +446,27 @@ pub(crate) fn execute_unbond_stnibi(
         env.block.time.seconds(),
         env.block.height,
         current_batch.id,
-    );
+    )?;
 
      STATE.save(deps.storage, &state)?;
 
      let subdenom = "";
-     let supply_key = subdenom;
-     let token_supply =
-     TOKEN_SUPPLY.may_load(deps.storage, supply_key)?;
-     match token_supply {
-         Some(supply) => {
-             let new_supply = supply - amount; 
-             TOKEN_SUPPLY.save(deps.storage, supply_key, &new_supply)
-         }?,
-         None => {
-             return Err(StdError::generic_err(
-                 "Zero stNIBI in circulation supply",
-             ));
-     }
-     }
+     let supply_key = "";
+   
+     TOKEN_SUPPLY.update(
+        deps.storage,
+        "",
+        |token_supply: Option<Uint128>| -> StdResult<_> {
+            match token_supply {
+                Some(supply) => {
+                    supply.checked_sub(amount)
+                        .or_else(|_| Err(StdError::generic_err("Insufficient token supply")))
+                }
+                None => Err(StdError::generic_err("Zero stNIBI in circulation supply"))
+            }
+        },
+    )?;
+    
      let res = Response::new().add_messages(messages).add_attributes(vec![
          attr("action", "burn"),
          attr("from", sender),
@@ -513,11 +527,19 @@ pub fn update_balances_for_unbond(
     timestamp: u64,
     block_height: u64,
     batch_id: u64,
-) -> Result<(), BalanceError> {
-    let old_info = STAKERINFO_NEW.load(storage, staker)
-        .map_err(|_| BalanceError::StakerNotFound {})?;
-    
+) -> Result<(), StdError> {
+    let old_info =  STAKERINFO_NEW.may_load(storage, staker)
+    .map_err(|_| StdError::generic_err("StakerNotFound"))?;
     let nibi_unbonding = stnibi_amount * exchange_rate;
+
+    let old_info = match old_info {
+        Some(info) => {
+            info
+        },
+        None =>{
+            return Err(StdError::generic_err("StakerNotFound"))
+        }
+    };
 
     // Validate the update
     validate_balance_update(
@@ -529,15 +551,12 @@ pub fn update_balances_for_unbond(
         exchange_rate,
     )?;
 
-        
+
     // Update staker info
     let new_info = StakerInfo {
         amount_staked_unibi: old_info.amount_staked_unibi,
         amount_stnibi_balance: old_info.amount_stnibi_balance.checked_sub(stnibi_amount)
-            .map_err(|_| BalanceError::InsufficientBalance {
-                required: stnibi_amount,
-                available: old_info.amount_stnibi_balance,
-            })?,
+            .map_err(|_|StdError::generic_err("OverFlow") )?,
         unbonding_period: Some(Uint128::from(COSMOS_UNBONDING_PERIOD)),
         ..old_info
     };

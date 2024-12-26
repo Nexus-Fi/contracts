@@ -26,7 +26,7 @@ use cosmwasm_std::{
 use crate::config::{ execute_update_config, execute_update_params};
 use crate::error::BalanceError;
 use crate::state::{
-    all_unbond_history, get_unbond_requests, query_get_finished_amount, read_unbond_history, BalanceAction, BalanceHistory, BalanceUpdate, BalanceUpdatesResponse, BALANCE_UPDATES, CONFIG, CURRENT_BATCH, GUARDIANS, LAST_UPDATE_ID, LPTOKENS, PARAMETERS, STAKERINFO, STAKERINFO_NEW, STATE
+    all_unbond_history, get_unbond_requests, query_get_finished_amount, read_unbond_history, BalanceAction, BalanceHistory, BalanceUpdate, BalanceUpdatesResponse, BALANCE_UPDATES, CONFIG, CURRENT_BATCH, GUARDIANS, LAST_UPDATE_ID, LPTOKENS, PARAMETERS, STAKERINFO, STAKERINFO_NEW, STATE, TOKEN_SUPPLY
 };
 use crate::unbond::{execute_unbond_stnibi, execute_withdraw_unbonded};
 
@@ -548,11 +548,24 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::AllStakers { start_after,limit } => {
             unimplemented!()
         },
+        QueryMsg::TotalSupply {  } => {
+            to_binary(&query_total_supply(deps)?)
+
+        }
 
     }
 }
 
+pub fn query_total_supply(deps:Deps)->StdResult<Uint128> {
+    let info = match TOKEN_SUPPLY.may_load(deps.storage, "")? {
+        Some(info) => info,
+        None => {
+            return Ok(Uint128::zero())
+        }
+    };
 
+    Ok(info)
+}   
 pub fn query_balance_updates(
     deps: Deps,
     staker: String,
@@ -844,6 +857,7 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
 fn query_state(deps: Deps, env: Env) -> StdResult<StateResponse> {
     let state = query_actual_state(deps, &env)?;
     let res = StateResponse {
+        total_stnibi_issued:state.total_stnibi_issued,
         stnibi_exchange_rate: state.stnibi_exchange_rate,
         total_bond_stnibi_amount: state.total_bond_stnibi_amount,
         prev_hub_balance: state.prev_hub_balance,

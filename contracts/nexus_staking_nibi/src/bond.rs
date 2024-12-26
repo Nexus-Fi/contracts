@@ -95,11 +95,14 @@ pub fn execute_bond(
                 prev_state.total_bond_stnibi_amount = prev_state.total_bond_stnibi_amount
                     .checked_add(payment.amount)
                     .map_err(|_| StdError::generic_err("Bond amount overflow"))?;
+                prev_state.total_stnibi_issued = prev_state.total_stnibi_issued
+                .checked_add(mint_amount)
+                .map_err(|_| StdError::generic_err("Supply overflow"))?;
                 Ok(prev_state)
             }
         }
     })?;
-
+    
     // Update balances
     update_balances_for_bond(
         deps.storage,
